@@ -1,6 +1,6 @@
 # Framed Map Atlas
 
-Recover Minecraft Java map art NAMES and assign them to their respective map art IDs from an extracted world backup. Additional tools attempt to infer tile multi-tile art pieces via name key matching and geometric relation.
+Recover Minecraft Java map art NAMES and assign them to their respective map art IDs from an extracted world backup. Additional tools attempt to infer multi-tile art pieces via name key matching and geometric relation.
 
 Start with extracting map images from dats, choose the artwork you want to keep, then search frames and containers for the names players gave those tiles. The catalog keeps each candidate title and the IDs on which that title was observed.
 
