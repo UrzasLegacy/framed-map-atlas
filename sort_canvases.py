@@ -321,7 +321,7 @@ try {
 <label id="decisionBox">Review <select id="filter"><option value="">All decisions</option><option>Unreviewed</option><option>Keep</option><option>Terrain</option><option>Unsure</option></select></label>
 <label id="uniformBox"><input type="checkbox" id="uniform">Include blank and solid</label>
 <label>Entries per page <select id="pageSize"><option>36</option><option selected>72</option><option>144</option><option>288</option></select></label>
-<span id="progress" class="note"></span></div>
+<span id="progress" class="note"></span><button type="button" id="remaining">Review remaining IDs</button></div>
 <p id="notice" role="status" class="message"></p><div class="heading"><h2 id="title"></h2><p id="stats"></p></div>
 <div id="canvasActions"></div><button id="applySuggestions" hidden></button> <button id="undo" hidden>Undo last bulk decision</button>
 <div class="paging" id="topPage"></div><div class="grid" id="grid"></div><div class="paging" id="bottomPage"></div>
@@ -358,6 +358,7 @@ for(const s of sites) for(const t of s.tiles){
   for(const id of t.ids){g.ids.push(id);byId.set(id,g)}
 }
 const allTiles = [...globalTiles.values()].sort((a,b)=>a.id-b.id);
+const nonuniformTotal=allTiles.reduce((sum,t)=>sum+(t.kind==="image"?t.ids.length:0),0);
 const defaultNames=new Map(), namedKeys=new Set();
 for(const [key,candidates] of Object.entries(names)){
   const titles=Object.keys(candidates).filter(Boolean);
@@ -444,7 +445,7 @@ function tileCard(t){
   const targets=wanted===null?t.ids:[wanted];
   card.append(link,el("h3","","Map "+id));
   if(mode==="terrain")card.append(el("p","note",terrainReasons[id]));
-  if(mode==="named"&&targets.length>1)card.append(el("small","",nf(targets.length)+" pending IDs with these pixels"));
+  if(mode==="remaining"||mode==="named"&&targets.length>1)card.append(el("small","",nf(targets.length)+" pending "+(targets.length===1?"ID":"IDs")+" with these pixels"));
   const entries=Object.entries(names[t.key]||{}).sort((a,b)=>Number(b[1].includes(id))-Number(a[1].includes(id)));
   function showName(parent,[name,sources]){
     parent.append(el("p","map-name",name));
@@ -495,6 +496,7 @@ function pager(id,pages){
 }
 function render(){
   const home=mode==="sites";
+  const remaining=mode==="remaining";
   const suggestions=mode==="terrain"||mode==="named";
   const terrain=pendingTerrain(), named=pendingNamed();
   const namedCount=named.reduce((sum,t)=>sum+t.ids.length,0);
@@ -504,12 +506,21 @@ function render(){
   $("applySuggestions").hidden=true;
   $("canvasActions").replaceChildren();if(mode==="site")$("canvasActions").append(canvasControls(site));
   $("undo").hidden=!lastBulk;
-  $("tierBox").hidden=!home;$("decisionBox").hidden=home||suggestions||wanted!==null||!!searchText;$("uniformBox").hidden=home||suggestions||wanted!==null||!!searchText;
+  $("tierBox").hidden=!home;$("decisionBox").hidden=home||remaining||suggestions||wanted!==null||!!searchText;$("uniformBox").hidden=home||remaining||suggestions||wanted!==null||!!searchText;
+  pressed("remaining",remaining);
   pressed("sites",home);pressed("all",mode==="all"&&wanted===null);
   let rows;
   if(home){
     rows=sites.filter(s=>!$("tier").value||s.folder.split("/")[0]===$("tier").value);
     $("title").textContent="Canvas contact sheets";$("stats").textContent=nf(rows.length)+" footprints · most distinct images first. Open a canvas to review its tiles."
+  }else if(remaining){
+    rows=[];
+    for(const t of allTiles){
+      const ids=t.ids.filter(id=>!decisions.has(id));
+      if(ids.length)rows.push({...t,id:ids[0],ids})
+    }
+    $("title").textContent="Remaining map IDs";
+    $("stats").textContent=nf(byId.size-decisions.size)+" unreviewed map IDs across "+nf(rows.length)+" distinct images, including blank and solid maps. Each decision applies only to the pending IDs on that card."
   }else if(suggestions){
     const isNamed=mode==="named";
     rows=isNamed?named:terrain;
@@ -542,14 +553,17 @@ function render(){
   page=Math.max(0,Math.min(page,pages-1));if(home)homePage=page;
   $("grid").className=home?"grid":"grid tiles";
   $("grid").replaceChildren(...rows.slice(page*size,(page+1)*size).map(home?siteCard:tileCard));
-  if(!rows.length)$("grid").append(el("p","",mode==="named"?"No pending named map suggestions.":mode==="terrain"?"No pending terrain suggestions.":"No results for these filters."));
+  if(!rows.length)$("grid").append(el("p","",remaining?"Every map ID has a decision.":mode==="named"?"No pending named map suggestions.":mode==="terrain"?"No pending terrain suggestions.":"No results for these filters."));
   pager("topPage",pages);pager("bottomPage",pages);
-  $("progress").textContent=nf(decisions.size)+" / "+nf(byId.size)+" map IDs reviewed"
+  let nonuniformReviewed=0;
+  for(const id of decisions.keys())if(byId.get(id).kind==="image")nonuniformReviewed++;
+  $("progress").textContent=nf(decisions.size)+" / "+nf(byId.size)+" map IDs reviewed · "+nf(nonuniformReviewed)+" / "+nf(nonuniformTotal)+" nonuniform IDs reviewed"
 }
 $("overview").textContent=nf(byId.size)+" map IDs · "+nf(sites.length)+" footprints";
 $("sites").onclick=()=>openMode("sites");$("all").onclick=()=>openMode("all");
 $("terrain").onclick=()=>openMode("terrain");
 $("named").onclick=()=>openMode("named");
+$("remaining").onclick=()=>openMode("remaining");
 $("pageSize").onchange=()=>{page=0;homePage=0;render()};
 for(const id of ["tier","filter","uniform"])$(id).onchange=()=>{page=0;render()};
 $("lookup").onsubmit=e=>{
