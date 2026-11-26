@@ -128,11 +128,11 @@ class ScannerTest(unittest.TestCase):
         cart = {"id": "minecraft:chest_minecart", "Pos": [20, 60, 3], "Items": [dict(item(1082, "Cart"), Slot=3)]}
         region(self.world / "region", {"DataVersion": 3953, "block_entities": [chest]})
         region(self.world / "entities", {"DataVersion": 3953, "Entities": [modern(11, 62, 25, "On wall"), cart]})
-        keep = self.base / "keep.txt"
-        keep.write_text("map_00025.png\nmap_00367.png\nmap_01082.png\nmap_02628.png")
+        keep = self.base / "review.csv"
+        keep.write_text("map_id,pixel_key,decision,chosen_name\n25,a,Keep,\n367,b,Keep,\n1082,c,Keep,\n2628,d,Keep,\n")
         for n in (25, 367, 1082):
             self.saved_map(f"data/map_{n}.dat", bytes(16384))
-        self.run_scan(flags=["--include-containers", "--workers", "2", "--map-list", str(keep), "--export-maps", "both"])
+        self.run_scan(flags=["--include-containers", "--workers", "2", "--review-csv", str(keep), "--export-maps", "both"])
         records = read_json(self.out / "map-names.json")
         self.assertEqual([r["map_id"] for r in records], [25, 367, 1082])
         self.assertEqual(records[0]["observed_names"], {"On wall": 1, "Stored alias": 1})
@@ -239,28 +239,29 @@ class ScannerTest(unittest.TestCase):
         self.assertIsNone(entry["png"])
         self.assertEqual((self.out / entry["dat"]).read_bytes(), raw)
 
-    def test_map_list_filters_report_export(self):
+    def test_review_csv_filters_report_export(self):
         catalog = self.base / "map-names.json"
         catalog.write_text(json.dumps([{"world": ".", "map_id": i} for i in (25, 26)]))
         for i in (25, 26):
             self.saved_map(f"data/map_{i}.dat", bytes(16384))
-        keep = self.base / "keep.txt"
-        keep.write_bytes(b"\xef\xbb\xbf map_00025.png \r\n\r\nmap_25.PNG\r\nmap_00367.png")
-        self.run_scan(flags=["--from-report", str(catalog), "--export-maps", "both", "--map-list", str(keep)])
+        keep = self.base / "review.csv"
+        keep.write_text("map_id,pixel_key,decision,chosen_name\n25,a,Keep,\n\n25,a,Keep,\n367,b,Keep,\n",
+                        encoding="utf-8-sig")
+        self.run_scan(flags=["--from-report", str(catalog), "--export-maps", "both", "--review-csv", str(keep)])
         report = read_json(self.out / "map-exports.json")
         self.assertEqual(report["selection"], {"requested_ids": 2, "matched_ids": 1, "unmatched_ids": [367]})
         self.assertEqual([r["map_id"] for r in report["maps"]], [25])
         self.assertEqual(sorted(p.name for p in (self.out / "maps").rglob("*") if p.is_file()),
                          ["map_25.dat", "map_25.png"])
 
-    def test_map_list_filters_before_grouping_in_parallel(self):
+    def test_review_csv_filters_before_grouping_in_parallel(self):
         folder = self.world / "entities"
         region(folder, {"DataVersion": 3953, "Entities": [modern(-1, 60, 25, "Moon")]}, rx=-1, slot=31)
         region(folder, {"DataVersion": 3953, "Entities": [modern(0, 60, 26, "Moon"),
                                                           modern(1, 60, 367, "Moon")]}, rx=0)
-        keep = self.base / "keep.txt"
-        keep.write_text("map_00025.png\nmap_00367.png\nmap_01082.png\n")
-        self.run_scan(flags=["--entities-only", "--workers", "2", "--map-list", str(keep)])
+        keep = self.base / "review.csv"
+        keep.write_text("map_id,pixel_key,decision,chosen_name\n25,a,Keep,\n367,b,Keep,\n1082,c,Keep,\n26,d,Unsure,\n")
+        self.run_scan(flags=["--entities-only", "--workers", "2", "--review-csv", str(keep)])
         self.assertEqual([r["map_id"] for r in read_json(self.out / "map-names.json")], [25, 367])
         with (self.out / "frames.csv").open(encoding="utf-8-sig", newline="") as f:
             self.assertEqual(sorted(int(r["map_id"]) for r in csv.DictReader(f)), [25, 367])
@@ -268,14 +269,14 @@ class ScannerTest(unittest.TestCase):
         self.assertEqual(sorted([t["map_id"] for t in g["tiles"]] for g in groups), [[25], [367]])
         self.assertEqual(read_json(self.out / "scan-summary.json")["selection"]["unmatched_ids"], [1082])
 
-    def test_invalid_or_empty_map_list_never_runs_unfiltered(self):
-        keep = self.base / "keep.txt"
-        for contents, error in [(" \n", "contains no filenames"), ("map_00025.png\nmap_*.png", "line 2")]:
+    def test_invalid_or_empty_review_csv_never_runs_unfiltered(self):
+        keep = self.base / "review.csv"
+        for contents, error in [("", "four-column"), ("map_id,pixel_key,decision,chosen_name\n25,a,Bad,", "line 2")]:
             keep.write_text(contents)
             with self.subTest(contents=contents):
                 stderr = io.StringIO()
                 with redirect_stderr(stderr), self.assertRaises(SystemExit) as failure:
-                    main([str(self.world), "--map-list", str(keep), "--out", str(self.out)])
+                    main([str(self.world), "--review-csv", str(keep), "--out", str(self.out)])
                 self.assertNotEqual(failure.exception.code, 0)
                 self.assertIn(error, stderr.getvalue())
                 self.assertFalse(self.out.exists())
