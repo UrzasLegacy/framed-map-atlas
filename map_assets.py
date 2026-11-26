@@ -8,7 +8,6 @@ import shutil
 import struct
 import zlib
 from collections import defaultdict
-from itertools import chain
 from pathlib import Path
 
 from anvil import LIMIT, NBT, decompress
@@ -34,49 +33,33 @@ def png_chunk(kind, data):
     return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data))
 
 
-def load_map_list(path):
-    ids = set()
+def load_kept_ids(path):
+    records = {}
     with path.open(encoding="utf-8-sig", newline="") as stream:
-        first = stream.readline()
-        if first.rstrip("\r\n") == "map_id,pixel_key,decision":
-            return kept_review_ids(stream, path)
-        for line_number, line in enumerate(chain((first,), stream), 1):
-            entry = line.strip()
-            if not entry:
-                continue
-            match = re.fullmatch(r"map_(-?[0-9]+)\.png", entry, re.IGNORECASE | re.ASCII)
-            if not match:
-                raise ValueError(f"{path}, line {line_number}: expected a filename like map_00025.png")
-            ids.add(int(match[1]))
-    if not ids:
-        raise ValueError(f"{path}: the map list contains no filenames")
-    return frozenset(ids)
-
-
-def kept_review_ids(stream, path):
-    kept = set()
-    keys_by_id = {}
-    decisions = {}
-    reader = csv.reader(stream, strict=True)
-    try:
-        for row in reader:
-            if not row:
-                continue
-            if len(row) != 3:
-                raise ValueError(f"{path}, line {reader.line_num + 1}: expected three review columns")
-            raw_id, key, decision = row
-            if not re.fullmatch(r"-?[0-9]+", raw_id) or not key or decision not in ("Keep", "Terrain", "Unsure"):
-                raise ValueError(f"{path}, line {reader.line_num + 1}: invalid review row")
-            map_id = int(raw_id)
-            if keys_by_id.setdefault(map_id, key) != key or decisions.setdefault(key, decision) != decision:
-                raise ValueError(f"{path}, line {reader.line_num + 1}: conflicting review rows")
-            if decision == "Keep":
-                kept.add(map_id)
-    except csv.Error as exc:
-        raise ValueError(f"{path}, line {reader.line_num + 1}: {exc}") from exc
+        reader = csv.reader(stream, strict=True)
+        try:
+            if next(reader, None) != ["map_id", "pixel_key", "decision", "chosen_name"]:
+                raise ValueError(f"{path}: expected the four-column review CSV")
+            for row in reader:
+                if not row:
+                    continue
+                if len(row) != 4:
+                    raise ValueError(f"{path}, line {reader.line_num}: expected four columns")
+                raw_id, key, decision, title = row
+                if not re.fullmatch(r"-?[0-9]+", raw_id) or not key:
+                    raise ValueError(f"{path}, line {reader.line_num}: invalid map ID or pixel key")
+                if decision not in ("Keep", "Terrain", "Unsure") and not (decision == "" and title):
+                    raise ValueError(f"{path}, line {reader.line_num}: invalid review decision")
+                map_id = int(raw_id)
+                record = (key, decision, title)
+                if records.setdefault(map_id, record) != record:
+                    raise ValueError(f"{path}, line {reader.line_num}: conflicting review rows for map {map_id}")
+        except csv.Error as exc:
+            raise ValueError(f"{path}, line {reader.line_num}: {exc}") from exc
+    kept = frozenset(i for i, (_, decision, _) in records.items() if decision == "Keep")
     if not kept:
         raise ValueError(f"{path}: review has no Keep decisions")
-    return frozenset(kept)
+    return kept
 
 
 def index_dats(folder):
