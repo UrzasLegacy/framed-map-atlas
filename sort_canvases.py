@@ -243,6 +243,7 @@ REVIEW_TEMPLATE = r'''<!doctype html>
 :root{font-family:"Work Sans","Segoe UI",sans-serif;color:#182b24;background:#f4f1e7;--pine:#203e33;--line:#c7c9b8;--paper:#fffcf3;color-scheme:light}
 *{box-sizing:border-box}body{margin:0}button,select,input{font:inherit}button,select,input[type=search]{border:1px solid var(--line);border-radius:5px;padding:.47rem .68rem;background:var(--paper);color:inherit}button{cursor:pointer}button:hover{border-color:var(--pine);background:#e9eddf}button:focus-visible,a:focus-visible,select:focus-visible,input:focus-visible{outline:3px solid #bf7612;outline-offset:2px}button:disabled{opacity:.46;cursor:default}button[aria-pressed=true]{background:var(--pine);color:white;border-color:var(--pine)}header{background:var(--pine);color:#fffbea;padding:1.1rem max(4vw,1rem);display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap}h1,h2,h3{font-family:"Source Serif 4",Georgia,serif;margin:0;line-height:1.1}h1{font-size:clamp(1.8rem,4vw,2.7rem)}header small{display:block;margin-top:.4rem;color:#d8e1cf}header button{color:#172d26}.actions,nav,.controls,.paging,.buttons{display:flex;align-items:center;flex-wrap:wrap;gap:.5rem}main{max-width:1600px;margin:auto;padding:1.3rem max(3vw,1rem) 3rem}.bar{display:flex;align-items:center;justify-content:space-between;gap:.8rem;flex-wrap:wrap}.controls{padding:.9rem 0;border-bottom:1px solid var(--line)}.controls label{display:flex;gap:.35rem;align-items:center;font-size:.87rem}#stats{color:#526154;margin:.5rem 0}.heading{margin:1.3rem 0 .7rem}h2{font-size:1.6rem}.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(280px,100%),1fr));gap:.85rem;margin:1rem 0}.tiles{grid-template-columns:repeat(auto-fill,minmax(min(205px,100%),1fr))}.site,.tile{background:var(--paper);border:1px solid var(--line);border-radius:7px;padding:.85rem}.site{text-align:left;display:flex;flex-direction:column;gap:.6rem}.strip{display:grid;grid-template-columns:repeat(3,1fr);gap:3px;background:#d9ddce;align-self:stretch}.strip img{width:100%;aspect-ratio:1;object-fit:contain}.strip:has(img:only-child){grid-template-columns:1fr}.strip:has(img:only-child) img{height:106px}.thumb,img{image-rendering:pixelated}.thumb{display:grid;place-items:center;background:repeating-conic-gradient(#d7d9ca 0% 25%,#e7eadc 0% 50%) 0 / 16px 16px;border-radius:4px}.thumb img{width:min(100%,256px);aspect-ratio:1;object-fit:contain}.tile h3{font-size:1.2rem;margin:.65rem 0 .3rem}small,.meta{color:#526154}.buttons{margin-top:.6rem;gap:.25rem}.buttons button{font-size:.85rem;padding:.38rem .47rem}.paging{justify-content:flex-end}.note{color:#435144;font-size:.87rem}.message{margin:.4rem 0;color:#783c0d}details{font-size:.85rem;margin-top:.4rem}summary{cursor:pointer}details p{overflow-wrap:anywhere}a{color:var(--pine)}[hidden]{display:none!important}
 .map-name{white-space:pre-wrap;overflow-wrap:anywhere;font-weight:600;margin:.45rem 0 .1rem}.name-source{overflow-wrap:anywhere}.tile details .map-name{margin-top:.6rem}
+.site-open{display:grid;gap:.5rem;text-align:left;width:100%}.site h3{margin:0}.tile select{width:100%;min-width:0}.choice{display:grid;gap:.25rem;margin:.6rem 0}.bulk{display:flex;align-items:center;flex-wrap:wrap;gap:.4rem}.bulk small{flex-basis:100%}
 </style></head><body>
 <header><div><h1>Map art review</h1><small id="overview"></small></div><div class="actions"><button id="export">Export review CSV</button><button id="import">Import review</button><input type="file" id="file" accept=".csv" hidden></div></header>
 <main><div class="bar"><nav><button id="sites">Canvases</button><button id="all">All distinct images</button></nav><form id="lookup"><input type="search" id="query" aria-label="Map ID, PNG filename, title, or pixel key" placeholder="Map ID, filename, title, or pixel key" title="Paste a full pixel key, or use key: followed by its first few characters" size="34"> <button>Find</button></form></div>
@@ -251,6 +252,7 @@ REVIEW_TEMPLATE = r'''<!doctype html>
 <label id="uniformBox"><input type="checkbox" id="uniform">Include blank and solid</label>
 <span id="progress" class="note"></span></div>
 <p id="notice" role="status" class="message"></p><div class="heading"><h2 id="title"></h2><p id="stats"></p></div>
+<div id="canvasActions"></div><button id="undo" hidden>Undo last canvas decision</button>
 <div class="paging" id="topPage"></div><div class="grid" id="grid"></div><div class="paging" id="bottomPage"></div>
 </main><script type="application/json" id="data">__MAP_DATA__</script>
 <script type="application/json" id="names">__MAP_NAMES__</script>
@@ -262,7 +264,8 @@ const names = JSON.parse($("names").textContent);
 const nf = n => Number(n).toLocaleString("en-US");
 const labels = ["Keep","Terrain","Unsure"];
 const storeKey = "framed-map-review/__COLLECTION_KEY__";
-let decisions = {}, page = 0, homePage = 0, mode = "sites", site = null, wanted = null;
+const decisions = new Map(), chosenNames = new Map();
+let lastBulk=null, page = 0, homePage = 0, mode = "sites", site = null, wanted = null;
 let searchText = "";
 const globalTiles = new Map(), byId = new Map();
 for(const s of sites) for(const t of s.tiles){
@@ -273,11 +276,14 @@ for(const s of sites) for(const t of s.tiles){
 const allTiles = [...globalTiles.values()].sort((a,b)=>a.id-b.id);
 function notice(text){$("notice").textContent=text}
 try {
-  const loaded=JSON.parse(localStorage.getItem(storeKey)||"{}");
-  for(const [k,v] of Object.entries(loaded)) if(globalTiles.has(k)&&labels.includes(v)) decisions[k]=v;
-} catch {notice("Browser storage is unavailable. Export your review CSV before closing.")}
+  const loaded=JSON.parse(localStorage.getItem(storeKey));
+  if(loaded){
+    for(const [id,v] of loaded.decisions) if(byId.has(id)&&labels.includes(v)) decisions.set(id,v);
+    for(const [id,v] of loaded.names) if(byId.has(id)&&typeof v==="string"&&v) chosenNames.set(id,v)
+  }
+} catch {notice("Could not load the saved review. You can import a review CSV.")}
 function save(){
-  try{localStorage.setItem(storeKey,JSON.stringify(decisions))}
+  try{localStorage.setItem(storeKey,JSON.stringify({decisions:[...decisions],names:[...chosenNames]}))}
   catch{notice("Browser storage is unavailable. Export your review CSV before closing.")}
 }
 function el(tag,cls,text){const n=document.createElement(tag);if(cls)n.className=cls;if(text!==undefined)n.textContent=text;return n}
@@ -289,18 +295,45 @@ function openMode(next){
   wanted=null;searchText="";mode=next;page=next==="sites"?homePage:0;
   $("filter").value="";$("query").value="";notice("");render();window.scrollTo(0,0)
 }
+function setValue(map,id,value){if(value)map.set(id,value);else map.delete(id)}
+function canvasControls(s){
+  const bar=el("div","bulk");
+  if(s.x==null||s.x==="")return bar;
+  const ids=s.tiles.flatMap(tile=>tile.ids);
+  bar.append(el("small","","Mark all "+nf(ids.length)+" map IDs on this canvas"));
+  for(const label of labels){
+    const b=button(label,()=>{
+      const changed=ids.filter(id=>decisions.get(id)!==label);
+      if(!changed.length)return;
+      lastBulk=changed.map(id=>[id,decisions.get(id)]);
+      for(const id of changed)decisions.set(id,label);
+      notice("Marked "+nf(changed.length)+" map IDs "+label+" on "+locationLabel(s)+".");save();render()
+    });
+    b.setAttribute("aria-pressed",String(ids.every(id=>decisions.get(id)===label)));
+    b.setAttribute("aria-label","Mark canvas "+locationLabel(s)+" "+label);bar.append(b)
+  }
+  return bar
+}
+$("undo").onclick=()=>{
+  if(!lastBulk)return;
+  for(const [id,value] of lastBulk)setValue(decisions,id,value);
+  lastBulk=null;notice("Restored the previous canvas decisions.");save();render()
+};
 function siteCard(s){
-  const card=button("",()=>{homePage=page;site=s;$("uniform").checked=s.count===0;openMode("site")});card.className="site";
+  const card=el("article","site");
+  const open=button("",()=>{homePage=page;site=s;$("uniform").checked=s.count===0;openMode("site")});open.className="site-open";
   let pool=s.tiles.filter(t=>t.kind==="image");if(!pool.length)pool=s.tiles;
   const strip=el("div","strip"), n=Math.min(6,pool.length);
   for(let i=0;i<n;i++)strip.append(photo(pool[Math.floor(i*(pool.length-1)/Math.max(1,n-1))]));
-  card.append(strip,el("h3","",locationLabel(s)),el("small","",nf(s.count)+" distinct non-uniform · "+nf(s.tiles.reduce((n,t)=>n+t.ids.length,0))+" IDs"));
+  open.append(strip,el("h3","",locationLabel(s)),el("small","",nf(s.count)+" distinct non-uniform · "+nf(s.tiles.reduce((n,t)=>n+t.ids.length,0))+" IDs"));
+  card.append(open,canvasControls(s));
   return card
 }
 function tileCard(t){
   const card=el("article","tile"), link=el("a","thumb");link.href=t.path;link.target="_blank";link.rel="noopener";link.title="Open original PNG";link.append(photo(t));
   const ids=globalTiles.get(t.key).ids;
   const id=wanted??t.id;
+  const targets=wanted===null?t.ids:[wanted];
   card.append(link,el("h3","","Map "+id));
   const entries=Object.entries(names[t.key]||{}).sort((a,b)=>Number(b[1].includes(id))-Number(a[1].includes(id)));
   function showName(parent,[name,sources]){
@@ -319,12 +352,27 @@ function tileCard(t){
     }
     if(["blank","solid"].includes(t.kind)&&entries.some(([,sources])=>!sources.includes(id)))card.append(el("p","note","Many maps can share a single color. Treat pixel matches here as tentative."));
   }
+  const selected=new Set(targets.map(i=>chosenNames.get(i)||""));
+  const options=new Set([...entries.map(([name])=>name),...selected]);options.delete("");
+  if(options.size){
+    const label=el("label","choice","Chosen name");
+    const select=el("select");
+    function option(value,text){const opt=el("option","",text);opt.value=value;select.append(opt);return opt}
+    if(selected.size>1){const mixed=option("","Multiple choices");mixed.disabled=true;mixed.selected=true}
+    option("","No name selected");
+    for(const name of options)option(name,name);
+    if(selected.size===1)select.value=[...selected][0];
+    select.onchange=()=>{for(const i of targets)setValue(chosenNames,i,select.value);save();render()};
+    label.append(select);card.append(label)
+  }
   const info=el("details");info.append(el("summary","",nf(ids.length)+" map ID"+(ids.length===1?"":"s")+" with these pixels"),el("p","",ids.join(", ")));card.append(info);
   info.append(el("p","meta","Pixel key · "+t.key));
   const buttons=el("div","buttons");
+  if(new Set(targets.map(i=>decisions.get(i))).size>1)card.append(el("small","","Mixed decisions"));
   for(const label of labels){
-    const b=button(label,()=>{if(decisions[t.key]===label)delete decisions[t.key];else decisions[t.key]=label;save();render()});
-    b.setAttribute("aria-pressed",String(decisions[t.key]===label));b.setAttribute("aria-label",label+" map "+id);buttons.append(b)
+    const active=targets.every(i=>decisions.get(i)===label);
+    const b=button(label,()=>{lastBulk=null;for(const i of targets)setValue(decisions,i,active?"":label);save();render()});
+    b.setAttribute("aria-pressed",String(active));b.setAttribute("aria-label",label+" map "+id);buttons.append(b)
   }
   card.append(buttons);return card
 }
@@ -337,6 +385,8 @@ function pager(id,pages){
 }
 function render(){
   const home=mode==="sites";
+  $("canvasActions").replaceChildren();if(mode==="site")$("canvasActions").append(canvasControls(site));
+  $("undo").hidden=!lastBulk;
   $("tierBox").hidden=!home;$("decisionBox").hidden=home||wanted!==null||!!searchText;$("uniformBox").hidden=home||wanted!==null||!!searchText;
   pressed("sites",home);pressed("all",mode==="all"&&wanted===null);
   let rows;
@@ -354,10 +404,11 @@ function render(){
       rows=rows.filter(t=>Object.keys(names[t.key]||{}).some(name=>name.toLowerCase().includes(term)))
     }else if(wanted===null){
       const choice=$("filter").value;
-      rows=rows.filter(t=>($("uniform").checked||!["solid","blank"].includes(t.kind))&&(!choice||(decisions[t.key]||"Unreviewed")===choice))
+      rows=rows.filter(t=>($("uniform").checked||!["solid","blank"].includes(t.kind))&&(!choice||t.ids.some(id=>(decisions.get(id)||"Unreviewed")===choice)))
     }
     $("title").textContent=mode.startsWith("pixel")?"Pixel key matches":wanted!==null?"Lookup · map "+wanted:searchText?"Titles matching “"+searchText+"”":mode==="site"?locationLabel(site):"All distinct images";
-    $("stats").textContent=nf(rows.length)+" distinct image"+(rows.length===1?"":"s")+". Decisions apply to every ID with identical pixels."
+    const scope=wanted!==null?"Changes apply to this map ID.":mode==="site"?"Changes apply to copies on this canvas.":"Changes apply to all copies of each image.";
+    $("stats").textContent=nf(rows.length)+" distinct image"+(rows.length===1?"":"s")+". "+scope
   }
   const size=home?18:36,pages=Math.ceil(rows.length/size);
   page=Math.max(0,Math.min(page,pages-1));if(home)homePage=page;
@@ -365,7 +416,7 @@ function render(){
   $("grid").replaceChildren(...rows.slice(page*size,(page+1)*size).map(home?siteCard:tileCard));
   if(!rows.length)$("grid").append(el("p","","No results for these filters."));
   pager("topPage",pages);pager("bottomPage",pages);
-  $("progress").textContent=nf(Object.keys(decisions).length)+" / "+nf(globalTiles.size)+" distinct images reviewed"
+  $("progress").textContent=nf(decisions.size)+" / "+nf(byId.size)+" map IDs reviewed"
 }
 $("overview").textContent=nf(byId.size)+" map IDs · "+nf(sites.length)+" footprints";
 $("sites").onclick=()=>openMode("sites");$("all").onclick=()=>openMode("all");
@@ -387,22 +438,50 @@ $("lookup").onsubmit=e=>{
 };
 function download(name,content,type){const url=URL.createObjectURL(new Blob([content],{type}));const a=el("a");a.href=url;a.download=name;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),3000)}
 $("export").onclick=()=>{
-  const rows=[...byId].filter(([,tile])=>decisions[tile.key]).sort((a,b)=>a[0]-b[0]);
-  if(!rows.length){notice("Mark a tile first to export your review.");return}
-  const lines=rows.map(([id,t])=>[id,t.key,decisions[t.key]].join(","));
-  download("map-review.csv","map_id,pixel_key,decision\r\n"+lines.join("\r\n")+"\r\n","text/csv")
+  const ids=[...byId.keys()].filter(id=>decisions.has(id)||chosenNames.has(id)).sort((a,b)=>a-b);
+  if(!ids.length){notice("Mark a tile or choose a name first.");return}
+  const lines=["map_id,pixel_key,decision,chosen_name"];
+  for(const id of ids){
+    const title=(chosenNames.get(id)||"").replaceAll('"','""');
+    lines.push([id,byId.get(id).key,decisions.get(id)||"",'"'+title+'"'].join(","))
+  }
+  download("map-review.csv",lines.join("\r\n")+"\r\n","text/csv")
 };
+function csvRows(text){
+  text=text.replace(/^\uFEFF/,"");
+  const field=/("(?:[^"]|"")*"|[^",\r\n]*)(,|\r\n|\r|\n|$)/gy;
+  const rows=[];let row=[];
+  while(field.lastIndex<text.length){
+    const cell=field.exec(text);if(!cell)throw Error("Invalid review CSV quoting.");
+    const raw=cell[1];row.push(raw.startsWith('"')?raw.slice(1,-1).replaceAll('""','"'):raw);
+    if(cell[2]!==","){if(row.length>1||row[0]!=="")rows.push(row);row=[]}
+    else if(field.lastIndex===text.length){row.push("");rows.push(row)}
+  }
+  return rows
+}
 $("import").onclick=()=>$("file").click();
 $("file").onchange=async e=>{
  const f=e.target.files[0];if(!f)return;
  try{
-  const lines=(await f.text()).replace(/^\uFEFF/,"").trim().split(/\r?\n/);
-  if(lines.shift()!=="map_id,pixel_key,decision")throw Error("Choose a CSV exported by this review page.");
+  const rows=csvRows(await f.text()), header=rows.shift()||[];
+  if(header.length!==4||header.join(",")!=="map_id,pixel_key,decision,chosen_name")throw Error("Choose a CSV exported by this review page.");
   const incoming=new Map();
-  for(const line of lines){const [id,key,value,...extra]=line.split(",");if(extra.length||!byId.has(Number(id))||byId.get(Number(id)).key!==key||!labels.includes(value))throw Error("This CSV contains a row that does not match this collection.");if(incoming.has(key)&&incoming.get(key)!==value)throw Error("This CSV contains conflicting decisions.");incoming.set(key,value)}
+  for(const row of rows){
+    const [rawId,key,value,title]=row,id=Number(rawId);
+    if(row.length!==4||!/^-?\d+$/.test(rawId)||byId.get(id)?.key!==key||
+       (!labels.includes(value)&&!(value===""&&title)))throw Error("A review row does not match this gallery.");
+    const previous=incoming.get(id);
+    if(previous&&(previous[0]!==value||previous[1]!==title))throw Error("Conflicting review rows for map "+id+".");
+    incoming.set(id,[value,title])
+  }
   let added=0,conflicts=0;
-  for(const [k,v] of incoming){if(decisions[k]&&decisions[k]!==v){conflicts++;continue}if(!decisions[k]){decisions[k]=v;added++}}
-  notice("Imported "+added+" new decisions. Kept existing decisions for "+conflicts+" conflicts.");save();render()
+  for(const [id,[decision,title]] of incoming){
+    for(const [map,value] of [[decisions,decision],[chosenNames,title]]){
+      if(!value)continue;
+      if(!map.has(id)){map.set(id,value);added++}else if(map.get(id)!==value)conflicts++
+    }
+  }
+  lastBulk=null;notice("Imported "+added+" choices. Kept existing values for "+conflicts+" conflicts.");save();render()
  }catch(err){notice(err.message)}finally{e.target.value=""}
 };
 render();
