@@ -18,7 +18,13 @@ python sort_canvases.py "D:\Backup\world\data" --out "sorted-maps"
 
 Open `sorted-maps/review.html`. Each canvas groups maps by dimension, center coordinates, and scale. Repeated use of one canvas is a lead for finding artwork. Click a canvas or **All distinct images** to see its tiles. Use **Find** with an ID, a PNG filename, a name from a loaded report, a full pixel key, or a prefix such as `key:7fa2`.
 
-Mark tiles **Keep**, **Terrain**, or **Unsure**, then click **Export review CSV**. Save `map-review.csv` in your working folder. It records all three decisions and includes every ID sharing the reviewed pixels in this gallery. The scanner and name matcher select the rows marked **Keep**. Use the complete DAT directory so copies under other IDs are eligible. You can import the same CSV later to restore decisions.
+On a canvas card, **Keep**, **Terrain**, and **Unsure** mark every map ID at that footprint, including copies, blank tiles, and tiles hidden by a filter. The same controls appear inside the canvas. Other canvases keep their decisions, even when they contain identical artwork. **Undo last canvas decision** restores the prior values until the next decision edit, import, or reload.
+
+To review a tile individually, open a canvas or choose **All distinct images**. When a tile has candidate titles, use **Chosen name** to select one or clear the choice. Inside a canvas, tile edits apply to that canvas’s copies. In **All distinct images**, they apply to every ID with those pixels. Look up one numeric map ID to edit just that copy. Bulk canvas decisions preserve chosen names.
+
+Click **Export review CSV** and save `map-review.csv` in your working folder. Each reviewed or named ID gets a row with `map_id`, `pixel_key`, `decision`, and `chosen_name`. Choosing a name alone leaves the decision blank. The scanner and name matcher select rows marked **Keep**. Include the full DAT directory when building the gallery so copies under other IDs are eligible.
+
+Use **Import review** to restore decisions and names. An import fills missing choices and preserves existing choices when reviewers disagree.
 
 The sorter preserves each numeric ID in its PNG filename. `map-index.csv` records each ID, image path, footprint, pixel key, representative ID, and read issues. `footprints.csv` ranks canvases by distinct nonuniform images. The default frequent tier starts at ten images. Use `--frequent-at` to adjust it, `--png-dir` to organize existing PNGs from the same save, or a fresh `.zip` as the output to share a gallery. Extract a gallery ZIP in full before opening the page.
 
@@ -33,19 +39,19 @@ This produces one row per DAT with its ID, dimension, canvas center, scale, flag
 ## 2. Search for names
 
 ```powershell
-python scan_maps.py "D:\Backup" --include-containers --map-list "map-review.csv" --workers 4 --out "map-report"
+python scan_maps.py "D:\Backup" --include-containers --review-csv "map-review.csv" --workers 4 --out "map-report"
 ```
 
-This searches saved ordinary and glow item frames plus supported block and entity inventories across the supplied dimensions. It descends into shulker boxes and bundles, including containers displayed in frames. A map list limits the observations retained. The scanner still reads eligible region files, since a player can move a copy anywhere. Keep the region and entity directories and any external `.mcc` chunk files in their original layout.
+This searches saved ordinary and glow item frames plus supported block and entity inventories across the supplied dimensions. It descends into shulker boxes and bundles, including containers displayed in frames. The review CSV limits the retained observations to IDs marked **Keep**. The scanner still reads eligible region files, since a player can move a copy anywhere. Keep the region and entity directories and any external `.mcc` chunk files in their original layout.
 
-Omit `--map-list` to build a reusable catalog of all IDs in the scanned sources. Existing text selections also work with `--map-list`. Use one PNG filename per line, as illustrated in `map-list_EXAMPLE.txt`. For a frame-only search on a world created on Java 1.17 or later, use `--entities-only` instead of `--include-containers`. The default frame scan also reads terrain regions for legacy embedded entities. `--workers N` controls how many region files are read concurrently.
+Omit `--review-csv` to build a reusable catalog of all IDs in the scanned sources. For a frame-only search on a world created on Java 1.17 or later, use `--entities-only` instead of `--include-containers`. The default frame scan also reads terrain regions for legacy embedded entities. `--workers N` controls how many region files are read concurrently.
 
 **Coverage.** The catalog captures all observed titles within the selected IDs and supported storage. Player inventories, personal Ender Chests, dropped items, plugin databases, and Bedrock saves are outside this scanner's scope. Read the issues in `scan-summary.json` before treating a search as complete. A title may survive on only one copy of an image.
 
 ## 3. Match titles across IDs and refresh the gallery
 
 ```powershell
-python curated_names.py "D:\Backup\world\data" --map-list "map-review.csv" --names-report "map-report" --out "curated-map-names.csv"
+python curated_names.py "D:\Backup\world\data" --review-csv "map-review.csv" --names-report "map-report" --out "curated-map-names.csv"
 python review_gallery.py "sorted-maps" --names-report "curated-map-names.csv"
 ```
 
@@ -83,10 +89,10 @@ Run the test suite from the source folder:
 python -m unittest discover -s tests -v
 ```
 
-To build a Windows executable for the map sorter app, use Windows Python with Tkinter installed:
+To build a Windows executable, use Windows Python with Tkinter:
 
 ```powershell
-python -m pip install pyinstaller tkinter
+python -m pip install pyinstaller
 python -m PyInstaller --onefile --windowed --noupx --name "Map Art Sorter" map_sorter_app.py
 ```
 

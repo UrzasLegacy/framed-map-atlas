@@ -11,5 +11,4 @@ build/
 dist/
 map-dat-metadata.csv
 curated-map-names.csv
-kept-map-ids.txt
 map-review.csv
