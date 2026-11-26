@@ -33,7 +33,7 @@ def png_chunk(kind, data):
     return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data))
 
 
-def load_kept_ids(path):
+def load_kept_records(path):
     records = {}
     with path.open(encoding="utf-8-sig", newline="") as stream:
         reader = csv.reader(stream, strict=True)
@@ -56,10 +56,14 @@ def load_kept_ids(path):
                     raise ValueError(f"{path}, line {reader.line_num}: conflicting review rows for map {map_id}")
         except csv.Error as exc:
             raise ValueError(f"{path}, line {reader.line_num}: {exc}") from exc
-    kept = frozenset(i for i, (_, decision, _) in records.items() if decision == "Keep")
+    kept = {i: (key, title) for i, (key, decision, title) in records.items() if decision == "Keep"}
     if not kept:
         raise ValueError(f"{path}: review has no Keep decisions")
     return kept
+
+
+def load_kept_ids(path):
+    return frozenset(load_kept_records(path))
 
 
 def index_dats(folder):
@@ -127,7 +131,10 @@ def read_pixels(source):
 
 
 def render(source):
-    pixels = read_pixels(source)
+    return render_pixels(read_pixels(source))
+
+
+def render_pixels(pixels):
     rows = b"".join(b"\0" + pixels[i:i + 128] for i in range(0, len(pixels), 128))
     header = struct.pack(">IIBBBBB", 128, 128, 8, 3, 0, 0, 0)
     return (b"\x89PNG\r\n\x1a\n" + png_chunk(b"IHDR", header) + png_chunk(b"PLTE", PALETTE)
