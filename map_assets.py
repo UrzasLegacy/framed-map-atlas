@@ -116,7 +116,7 @@ def validate_pixels(pixels):
 
 def read_map_data(source):
     root = read_map_nbt(source, {"data": {"colors": bytes, "dimension": None, "xCenter": None,
-                                         "zCenter": None, "scale": None}})
+                                         "zCenter": None, "scale": None, "locked": None}})
     saved = root.get("data")
     validate_pixels(saved.get("colors") if isinstance(saved, dict) else None)
     return saved
