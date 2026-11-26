@@ -48,7 +48,7 @@ def load_kept_ids(path):
                 raw_id, key, decision, title = row
                 if not re.fullmatch(r"-?[0-9]+", raw_id) or not key:
                     raise ValueError(f"{path}, line {reader.line_num}: invalid map ID or pixel key")
-                if decision not in ("Keep", "Terrain", "Unsure") and not (decision == "" and title):
+                if decision not in ("Keep", "Terrain", "Unsure", ""):
                     raise ValueError(f"{path}, line {reader.line_num}: invalid review decision")
                 map_id = int(raw_id)
                 record = (key, decision, title)
