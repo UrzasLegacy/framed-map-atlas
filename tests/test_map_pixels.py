@@ -7,7 +7,7 @@ import unittest
 from pathlib import Path
 
 from curated_names import write_catalog
-from map_assets import index_dats, load_map_list
+from map_assets import index_dats, load_kept_ids
 from scan_map_dats import metadata
 from sort_canvases import build_collection
 from test_scanner import tag
@@ -34,10 +34,10 @@ class SharedPixelTest(unittest.TestCase):
             with (out / "map-index.csv").open(encoding="utf-8-sig", newline="") as f:
                 self.assertEqual([r["pixel_sha256"] for r in csv.DictReader(f)], [expected, expected])
             keep = root / "map-review.csv"
-            keep.write_text(f"map_id,pixel_key,decision\n-1,{expected},Keep\n25,{expected},Keep\n"
-                            "26,other,Terrain\n27,third,Unsure\n", encoding="utf-8-sig")
+            keep.write_text(f"map_id,pixel_key,decision,chosen_name\n-1,{expected},Keep,\n25,{expected},Keep,\n"
+                            "26,other,Terrain,\n27,third,Unsure,\n", encoding="utf-8-sig")
             catalog = io.StringIO()
-            _, errors = write_catalog(data, load_map_list(keep), {-1: {"Sky"}}, catalog)
+            _, errors = write_catalog(data, load_kept_ids(keep), {-1: {"Sky"}}, catalog)
             self.assertEqual(errors, {})
             catalog.seek(0)
             rows = list(csv.DictReader(catalog))
@@ -47,14 +47,14 @@ class SharedPixelTest(unittest.TestCase):
     def test_review_requires_consistent_decisions_and_at_least_one_keep(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "map-review.csv"
-            for rows, message in [("2,a,Terrain\n3,b,Unsure", "no Keep"),
-                                  ("2,a,Keep\n3,a,Terrain", "conflict"),
-                                  ("2,a,Keep\n2,b,Keep", "conflict"),
-                                  ("2,a,Maybe", "invalid")]:
+            for rows, message in [("2,a,Terrain,\n3,b,Unsure,", "no Keep"),
+                                  ("2,a,Keep,\n2,a,Terrain,", "conflict"),
+                                  ("2,a,Keep,\n2,b,Keep,", "conflict"),
+                                  ("2,a,Maybe,", "invalid")]:
                 with self.subTest(rows=rows):
-                    path.write_text("map_id,pixel_key,decision\n" + rows, encoding="utf-8")
+                    path.write_text("map_id,pixel_key,decision,chosen_name\n" + rows, encoding="utf-8")
                     with self.assertRaisesRegex(ValueError, message):
-                        load_map_list(path)
+                        load_kept_ids(path)
 
     def test_invalid_and_ambiguous_dats_keep_direct_names(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -68,3 +68,14 @@ class SharedPixelTest(unittest.TestCase):
                              ["unreadable_data", "ambiguous_data", "missing_data"])
             catalog.seek(0)
             self.assertEqual(next(csv.DictReader(catalog))["direct_names"], '["Known"]')
+
+    def test_named_reviews_select_kept_ids_independently_of_shared_pixels(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "map-review.csv"
+            with path.open("w", encoding="utf-8-sig", newline="") as stream:
+                writer = csv.writer(stream)
+                writer.writerow(["map_id", "pixel_key", "decision", "chosen_name"])
+                writer.writerow([1, "same", "Keep", 'Moon, "Part 1"\nNorth'])
+                writer.writerow([2, "same", "Terrain", ""])
+                writer.writerow([3, "same", "", "Other title"])
+            self.assertEqual(load_kept_ids(path), {1})
