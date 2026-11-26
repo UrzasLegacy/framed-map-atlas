@@ -78,4 +78,5 @@ class SharedPixelTest(unittest.TestCase):
                 writer.writerow([1, "same", "Keep", 'Moon, "Part 1"\nNorth'])
                 writer.writerow([2, "same", "Terrain", ""])
                 writer.writerow([3, "same", "", "Other title"])
+                writer.writerow([4, "same", "", ""])
             self.assertEqual(load_kept_ids(path), {1})
