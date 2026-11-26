@@ -239,12 +239,12 @@ def artist_credit(name):
 
 def gallery_card(art):
     tiles, names, signature = [], set(), []
-    canvases = art["source_canvases"]
+    canvases = art.get("source_canvases", [])
     canvas_ids = {canvas_label(c): i for i, c in enumerate(canvases)}
     for t in art["tiles"]:
         aliases = t.get("observed_names", [])
         names.update([t["chosen_name"], *aliases])
-        canvas = canvas_ids[canvas_label(t["source_canvas"])] if t["source_canvas"] else None
+        canvas = canvas_ids[canvas_label(t["source_canvas"])] if t.get("source_canvas") else None
         tiles.append([t["row"], t["column"], t["original_map_id"], t["chosen_name"], t["kept"], canvas, aliases])
         signature.append([t["row"], t["column"], t["original_map_id"], t["clockwise_quarters"],
                           t["rotation_unknown"], t["kept"], t["pixel_key"]])
@@ -275,6 +275,16 @@ def gallery(layouts, unmatched, folder):
     (folder / "review.html").write_text(template.replace("__ARTWORK_DATA__", payload), encoding="utf-8")
 
 
+def refresh_gallery(folder):
+    with (folder / "layouts.json").open(encoding="utf-8") as stream:
+        layouts = json.load(stream)["layouts"]
+    unmatched = list(csv_rows(folder / "ungrouped.csv", ("original_map_id",)))
+    with tempfile.TemporaryDirectory(dir=folder, prefix=".review-") as tmp:
+        stage = Path(tmp)
+        gallery(layouts, unmatched, stage)
+        (stage / "review.html").replace(folder / "review.html")
+
+
 def build(manifest, frames_csv, out, world=None, map_index=None, data_dir=None):
     if out.exists():
         raise ValueError(f"output already exists: {out}. Choose a new folder.")
@@ -301,15 +311,25 @@ def build(manifest, frames_csv, out, world=None, map_index=None, data_dir=None):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--manifest", required=True, type=Path, help="manifest.csv from export_kept.py")
-    parser.add_argument("--frames", required=True, type=Path, help="frames.csv from the existing world scan")
-    parser.add_argument("--out", required=True, type=Path, help="New gallery folder")
+    mode = parser.add_mutually_exclusive_group(required=True)
+    mode.add_argument("--manifest", type=Path, help="manifest.csv from export_kept.py")
+    mode.add_argument("--refresh-gallery", type=Path, help="Regenerate review.html in an existing artwork-review folder")
+    parser.add_argument("--frames", type=Path, help="frames.csv from the existing world scan")
+    parser.add_argument("--out", type=Path, help="New gallery folder")
     parser.add_argument("--world", help="Use only this exact world key from frames.csv")
     sources = parser.add_mutually_exclusive_group()
     sources.add_argument("--map-index", type=Path, help="Full sorter map-index.csv from the same save, including excluded IDs")
     sources.add_argument("--data-dir", type=Path, help="Original folder of map DATs, including excluded IDs")
     args = parser.parse_args()
     try:
+        if args.refresh_gallery is not None:
+            if any((args.frames, args.out, args.world, args.map_index, args.data_dir)):
+                parser.error("use --refresh-gallery by itself")
+            refresh_gallery(args.refresh_gallery)
+            print(args.refresh_gallery / "review.html")
+            return
+        if not args.frames or not args.out:
+            parser.error("--manifest requires --frames and --out")
         count, displays, unmatched = build(args.manifest, args.frames, args.out, args.world, args.map_index, args.data_dir)
     except ImportError as exc:
         parser.exit(1, f"{exc}. Install Pillow with: python -m pip install 'Pillow>=9.1'\n")

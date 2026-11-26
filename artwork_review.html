@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Map artwork review</title><style>
+:root{color-scheme:light dark;font:16px/1.4 system-ui,sans-serif;--line:#8886;--muted:#626b73}
+@media(prefers-color-scheme:dark){:root{--muted:#adb8c0}}
+*{box-sizing:border-box}body{max-width:96rem;margin:auto;padding:1.25rem}
+h1{margin:0;font-size:1.8rem}h2{margin:.5rem 0 .2rem;font-size:1.08rem}p{margin:.4rem 0}
+a{color:LinkText}button,select,input{font:inherit;padding:.3rem .45rem;max-width:100%}
+button,summary{cursor:pointer}fieldset{border:1px solid var(--line);border-radius:.5rem;padding:.8rem;margin:1rem 0 .6rem}
+label{display:grid;gap:.2rem;font-size:.88rem}.filters,.actions,nav{display:flex;align-items:end;flex-wrap:wrap;gap:.6rem 1rem}
+.filters input{width:15rem}.filters input[type=number]{width:5rem}.filters #canvas{max-width:min(23rem,80vw)}
+.actions,nav{align-items:center;margin:.75rem 0}.note,small{color:var(--muted)}#notice:empty{display:none}
+main{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,19rem),1fr));gap:1rem;align-items:start}
+article{padding:.8rem;border:1px solid var(--line);border-radius:.6rem;overflow-wrap:anywhere}
+.photo{display:grid;place-items:center;height:13rem;background:#8882;border-radius:.35rem}
+.map{position:relative;display:block;width:min(100%,calc(13rem * var(--ratio)));line-height:0}
+.map img{width:100%;image-rendering:pixelated}.hit{position:absolute;border:2px solid #ffdf38;box-shadow:inset 0 0 0 1px #352900;pointer-events:none}
+details{margin:.45rem 0}ul,ol{padding-left:1.3rem}.match{background:#ffe576;color:#191919}
+.decision{border:0;border-top:1px solid var(--line);border-radius:0;padding:.35rem 0 0;margin:.65rem 0 0}
+.decision legend{font-size:.88rem;padding-right:.4rem}
+.decision-buttons{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.35rem}
+.decision-buttons button{min-height:2.25rem;line-height:1.2}
+.decision-buttons button[aria-pressed="true"]{font-weight:700;box-shadow:inset 0 0 0 2px currentColor}
+</style></head><body>
+<header><h1>Map artwork review</h1><p id="overview"></p></header>
+<fieldset><legend>Find layouts</legend><div class="filters">
+<label>Artwork, tile name or exact ID<input type="search" id="query" placeholder="Moonrise, #25970, map_25.png"></label>
+<label>Artist credit in title<input type="search" id="artist" list="artists" placeholder="Artist or collaborator"><datalist id="artists"></datalist></label>
+<label>Source canvas<select id="canvas"><option value="">All canvases</option></select></label>
+<label>Width<input type="number" id="width" min="1" step="1" placeholder="Any"></label>
+<label>Height<input type="number" id="height" min="1" step="1" placeholder="Any"></label>
+<label>Excluded tiles<select id="excluded"><option value="">Any</option><option value="yes">Has excluded tiles</option><option value="no">None excluded</option></select></label>
+<label>Gaps<select id="gaps"><option value="">Any</option><option value="yes">Has gaps</option><option value="no">No gaps</option></select></label>
+<label>Review status<select id="status"><option selected>Unreviewed</option><option>All decisions</option><option>Keep artwork</option><option>Needs investigation</option><option>Ignore grouping</option></select></label>
+<button type="button" id="clear">Clear filters</button></div></fieldset>
+<div class="actions"><button id="export">Export artwork decisions</button><button id="import">Import artwork decisions</button><input id="file" type="file" accept=".json,application/json" hidden><span id="progress"></span></div>
+<p class="note">Gold crosses are excluded tiles. Gray cells are gaps. Artist credits are inferred from names recorded on the maps.</p>
+<p id="notice" role="status"></p><nav id="top" aria-label="Result pages"></nav><main id="grid"></main><nav id="bottom" aria-label="Result pages"></nav>
+<script type="application/json" id="data">__ARTWORK_DATA__</script>
+<script>
+"use strict";
+const {collection,cards,ungrouped}=JSON.parse(document.getElementById("data").textContent);
+const $=id=>document.getElementById(id);
+const choices=["Keep artwork","Needs investigation","Ignore grouping"];
+const ids=new Set(cards.map(a=>a.key));
+const store="framed-map-atlas/artwork-decisions/"+collection;
+const fmt=n=>n.toLocaleString("en-US");
+const fold=s=>s.normalize("NFKC").toLowerCase().trim();
+const pageSize=48;
+let decisions=new Map(),page=0;
+function el(tag,text){const n=document.createElement(tag);if(text!==undefined)n.textContent=text;return n}
+function button(text,action){const b=el("button",text);b.type="button";b.onclick=action;return b}
+function option(select,text,value=text){const o=el("option",text);o.value=value;select.append(o)}
+function notice(text){$("notice").textContent=text}
+function loadSaved(){
+  const rows=JSON.parse(localStorage.getItem(store)||"[]");
+  return new Map(rows.filter(([key,value])=>ids.has(key)&&choices.includes(value)))
+}
+try{decisions=loadSaved()}catch{notice("Browser storage is unavailable or unreadable. Export your decisions before closing.")}
+function save(){try{localStorage.setItem(store,JSON.stringify([...decisions]))}catch{notice("Browser storage is unavailable. Export your decisions before closing.")}}
+window.addEventListener("storage",e=>{if(e.key===store||e.key===null){try{decisions=loadSaved();render()}catch{notice("Could not reload browser decisions.")}}});
+for(const a of cards){
+  a.names=[...new Set([a.id,a.title,...a.tiles.flatMap(t=>[t[3],...t[6]])].filter(Boolean).map(fold))];
+  a.credits=a.artists.map(fold);
+}
+for(const c of [...new Set(cards.flatMap(a=>a.canvases.map(c=>c[0])))].sort())option($("canvas"),c);
+for(const credit of [...new Set(cards.flatMap(a=>a.artists))].sort())option($("artists"),credit);
+const ungroupedLink=el("a",fmt(ungrouped)+" kept IDs outside these layouts");ungroupedLink.href="ungrouped.csv";
+$("overview").append(fmt(cards.length)+" candidate layouts · ",ungroupedLink);
+const filters=["query","artist","canvas","width","height","excluded","gaps","status"];
+function resetFilters(){for(const id of filters)$(id).value=id==="status"?"All decisions":"";page=0}
+$("clear").onclick=()=>{resetFilters();render()};
+for(const id of filters)$(id).addEventListener($(id).tagName==="INPUT"?"input":"change",()=>{page=0;render()});
+function findCanvas(label){
+  resetFilters();$("canvas").value=label;render();
+  $("canvas").focus();window.scrollTo(0,0)
+}
+function idQuery(query){
+  const match=/^(?:#(-?\d+)|map_(-?\d+)(?:\.(?:dat|png))?|(-?\d+))$/i.exec(query);
+  return match?Number(match[1]??match[2]??match[3]):null
+}
+function presence(value,count){return !value||(value==="yes")===(count>0)}
+function details(label){const d=el("details");d.append(el("summary",label));return d}
+function list(parent,values){const ul=el("ul");for(const v of values)ul.append(el("li",v));parent.append(ul)}
+function makeCard(a,tileId){
+  const card=el("article"),title=a.title||a.id,photo=el("a"),map=el("span"),img=el("img");
+  photo.className="photo";photo.href=a.preview;photo.title="Open composite PNG";
+  map.className="map";map.style.setProperty("--ratio",String(a.width/a.height));
+  img.src=a.preview;img.alt=title;img.loading="lazy";map.append(img);photo.append(map);card.append(photo);
+  const hits=a.tiles.filter(t=>t[2]===tileId);
+  for(const [r,c] of hits){
+    const mark=el("span");mark.className="hit";
+    Object.assign(mark.style,{left:100*(c-1)/a.width+"%",top:100*(r-1)/a.height+"%",width:100/a.width+"%",height:100/a.height+"%"});
+    map.append(mark)
+  }
+  card.append(el("h2",title),el("small",a.id+" · "+a.width+" × "+a.height+" · "+a.kept+" kept · "+a.excluded+" excluded · "+a.gaps+" gaps"));
+  if(hits.length)card.append(el("p","#"+tileId+" at "+hits.map(t=>"R"+t[0]+" C"+t[1]).join(", ")));
+  if(a.artists.length)card.append(el("p","Possible credit · "+a.artists.join(" / ")));
+  const canvases=details(a.canvases.length===1?"Source canvas · "+a.canvases[0][0]:"Source canvases ("+a.canvases.length+" known)");
+  const locations=el("ul");
+  for(const [label,count,excluded] of a.canvases){
+    const li=el("li");li.append(button(label,()=>findCanvas(label)),el("small"," "+count+" placements ("+excluded+" excluded)"));locations.append(li)
+  }
+  canvases.append(locations);
+  const unknown=a.tiles.filter(t=>t[5]===null).length;
+  if(unknown)canvases.append(el("small","Unknown canvas for "+unknown+" placements"));
+  const info=details("Tiles and displays ("+a.displays.length+")");
+  // Long frame lists only enter the DOM when a reviewer opens a card.
+  info.addEventListener("toggle",()=>{
+    if(!info.open||info.childElementCount>1)return;
+    info.append(el("h3","Frame locations"));list(info,a.displays);
+    if(a.notes.length)info.append(el("p",a.notes.join(" ")));
+    const ol=el("ol");
+    for(const [r,c,id,name,kept,canvasIndex,aliases] of a.tiles){
+      const li=el("li","R"+r+" C"+c+" · #"+id+" "+(kept?name:"outside kept manifest"));
+      if(id===tileId)li.className="match";
+      if(aliases.length)li.append(el("br"),el("small","Recorded as "+aliases.join(" / ")));
+      li.append(el("br"),el("small",a.canvases[canvasIndex]?.[0]||"Canvas unknown"));ol.append(li)
+    }
+    info.append(ol)
+  });
+  const decision=el("fieldset"),buttons=el("div");
+  decision.className="decision";buttons.className="decision-buttons";
+  const current=decisions.get(a.key)||"Unreviewed";
+  for(const value of [...choices,"Unreviewed"]){
+    const b=button(value,()=>{
+      if(value===current)return;
+      if(value==="Unreviewed")decisions.delete(a.key);else decisions.set(a.key,value);
+      notice(a.id+" · "+value);save();render()
+    });
+    b.setAttribute("aria-pressed",String(value===current));buttons.append(b)
+  }
+  decision.append(el("legend","Layout decision"),buttons);card.append(canvases,info,decision);return card
+}
+function nav(id,count,pages){
+  const bar=$(id);bar.replaceChildren();
+  if(id==="top")bar.append(el("strong",fmt(count)+" matching layouts"));
+  if(!pages)return;
+  function turn(n){page=n;render();$("top").scrollIntoView({block:"start"})}
+  const prev=button("Previous",()=>turn(page-1)),next=button("Next",()=>turn(page+1));
+  prev.disabled=page===0;next.disabled=page===pages-1;
+  bar.append(prev,el("span","Page "+(page+1)+" of "+pages),next)
+}
+function render(){
+  const q=fold($("query").value),tileId=idQuery(q),artist=fold($("artist").value),canvas=$("canvas").value;
+  const width=$("width").value,height=$("height").value,status=$("status").value;
+  const rows=cards.filter(a=>
+    (!q||(tileId===null?a.names.some(s=>s.includes(q)):a.tiles.some(t=>t[2]===tileId)))&&
+    (!artist||a.credits.some(s=>s.includes(artist)))&&
+    (!canvas||a.canvases.some(c=>c[0]===canvas))&&(!width||a.width===Number(width))&&(!height||a.height===Number(height))&&
+    presence($("excluded").value,a.excluded)&&presence($("gaps").value,a.gaps)&&
+    (status==="All decisions"||status===(decisions.get(a.key)||"Unreviewed")));
+  const pages=Math.ceil(rows.length/pageSize);page=Math.max(0,Math.min(page,pages-1));
+  nav("top",rows.length,pages);nav("bottom",rows.length,pages);
+  $("grid").replaceChildren(...rows.slice(page*pageSize,(page+1)*pageSize).map(a=>makeCard(a,tileId)));
+  if(!rows.length)$("grid").append(el("p","No matching layouts. Change the filters or select All decisions."));
+  $("progress").textContent=fmt(decisions.size)+" / "+fmt(cards.length)+" layouts reviewed"
+}
+$("export").onclick=()=>{
+  const entries=cards.filter(a=>decisions.has(a.key)).map(a=>({layout_key:a.key,group:a.id,title:a.title,decision:decisions.get(a.key)}));
+  const data={format:"framed-map-atlas/artwork-review-v1",collection,decisions:entries};
+  const url=URL.createObjectURL(new Blob([JSON.stringify(data,null,2)],{type:"application/json"}));
+  const link=el("a");link.href=url;link.download="artwork-decisions.json";document.body.append(link);link.click();link.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),1000)
+};
+$("import").onclick=()=>$("file").click();
+function importDecisions(data){
+  if(data?.format!=="framed-map-atlas/artwork-review-v1"||!Array.isArray(data.decisions))throw Error("Choose an exported artwork-decisions.json file.");
+  if(data.collection!==collection)throw Error("This file belongs to a different gallery collection.");
+  const incoming=new Map();
+  for(const row of data.decisions){
+    if(!row||!ids.has(row.layout_key)||!choices.includes(row.decision)||incoming.has(row.layout_key))throw Error("Invalid or repeated layout decision in this file.");
+    incoming.set(row.layout_key,row.decision)
+  }
+  let added=0,conflicts=0;
+  for(const [key,value] of incoming){
+    if(!decisions.has(key)){decisions.set(key,value);added++}
+    else if(decisions.get(key)!==value)conflicts++
+  }
+  notice(added+" decisions imported. "+conflicts+" conflicting local decisions preserved.");save();render()
+}
+$("file").onchange=async e=>{
+  const file=e.target.files[0];if(!file)return;
+  try{importDecisions(JSON.parse(await file.text()))}catch(error){notice("Import failed. "+error.message)}
+  e.target.value=""
+};
+render();
+</script></body></html>
