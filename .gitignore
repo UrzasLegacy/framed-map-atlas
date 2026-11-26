@@ -1,0 +1,15 @@
+__pycache__/
+*.py[cod]
+.venv/
+map-report*/
+sorted-maps*/
+*.mca
+*.mcc
+*.spec
+.DS_Store
+build/
+dist/
+map-dat-metadata.csv
+curated-map-names.csv
+kept-map-ids.txt
+map-review.csv
