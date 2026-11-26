@@ -291,20 +291,39 @@ def main(argv=None):
 # Bundled so existing installations only need this sorter file to generate the offline page.
 REVIEW_TEMPLATE = r'''<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Map art review</title><style>
-:root{font-family:"Work Sans","Segoe UI",sans-serif;color:#182b24;background:#f4f1e7;--pine:#203e33;--line:#c7c9b8;--paper:#fffcf3;color-scheme:light}
-*{box-sizing:border-box}body{margin:0}button,select,input{font:inherit}button,select,input[type=search]{border:1px solid var(--line);border-radius:5px;padding:.47rem .68rem;background:var(--paper);color:inherit}button{cursor:pointer}button:hover{border-color:var(--pine);background:#e9eddf}button:focus-visible,a:focus-visible,select:focus-visible,input:focus-visible{outline:3px solid #bf7612;outline-offset:2px}button:disabled{opacity:.46;cursor:default}button[aria-pressed=true]{background:var(--pine);color:white;border-color:var(--pine)}header{background:var(--pine);color:#fffbea;padding:1.1rem max(4vw,1rem);display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap}h1,h2,h3{font-family:"Source Serif 4",Georgia,serif;margin:0;line-height:1.1}h1{font-size:clamp(1.8rem,4vw,2.7rem)}header small{display:block;margin-top:.4rem;color:#d8e1cf}header button{color:#172d26}.actions,nav,.controls,.paging,.buttons{display:flex;align-items:center;flex-wrap:wrap;gap:.5rem}main{max-width:1600px;margin:auto;padding:1.3rem max(3vw,1rem) 3rem}.bar{display:flex;align-items:center;justify-content:space-between;gap:.8rem;flex-wrap:wrap}.controls{padding:.9rem 0;border-bottom:1px solid var(--line)}.controls label{display:flex;gap:.35rem;align-items:center;font-size:.87rem}#stats{color:#526154;margin:.5rem 0}.heading{margin:1.3rem 0 .7rem}h2{font-size:1.6rem}.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(280px,100%),1fr));gap:.85rem;margin:1rem 0}.tiles{grid-template-columns:repeat(auto-fill,minmax(min(205px,100%),1fr))}.site,.tile{background:var(--paper);border:1px solid var(--line);border-radius:7px;padding:.85rem}.site{text-align:left;display:flex;flex-direction:column;gap:.6rem}.strip{display:grid;grid-template-columns:repeat(3,1fr);gap:3px;background:#d9ddce;align-self:stretch}.strip img{width:100%;aspect-ratio:1;object-fit:contain}.strip:has(img:only-child){grid-template-columns:1fr}.strip:has(img:only-child) img{height:106px}.thumb,img{image-rendering:pixelated}.thumb{display:grid;place-items:center;background:repeating-conic-gradient(#d7d9ca 0% 25%,#e7eadc 0% 50%) 0 / 16px 16px;border-radius:4px}.thumb img{width:min(100%,256px);aspect-ratio:1;object-fit:contain}.tile h3{font-size:1.2rem;margin:.65rem 0 .3rem}small,.meta{color:#526154}.buttons{margin-top:.6rem;gap:.25rem}.buttons button{font-size:.85rem;padding:.38rem .47rem}.paging{justify-content:flex-end}.note{color:#435144;font-size:.87rem}.message{margin:.4rem 0;color:#783c0d}details{font-size:.85rem;margin-top:.4rem}summary{cursor:pointer}details p{overflow-wrap:anywhere}a{color:var(--pine)}[hidden]{display:none!important}
+<title>Map art review</title>
+<script>
+const themeKey="framed-map-atlas/theme";
+try {
+  const saved=localStorage.getItem(themeKey);
+  if(saved==="light"||saved==="dark")document.documentElement.dataset.theme=saved
+} catch {}
+</script>
+<style>
+:root{
+  color-scheme:light dark;font-family:"Work Sans","Segoe UI",sans-serif;
+  --ink:light-dark(#182b24,#edf1e7);--page:light-dark(#f4f1e7,#141c18);--paper:light-dark(#fffcf3,#202b25);
+  --pine:light-dark(#203e33,#a5d7b9);--pressed-text:light-dark(#fff,#12251b);--header:light-dark(#203e33,#192e24);
+  --line:light-dark(#c7c9b8,#54665a);--hover:light-dark(#e9eddf,#304036);--focus:light-dark(#bf7612,#ffc569);
+  --muted:light-dark(#526154,#b5c5b8);--notice:light-dark(#783c0d,#ffc788);--strip:light-dark(#d9ddce,#303c34);
+  --check-a:light-dark(#d7d9ca,#354038);--check-b:light-dark(#e7eadc,#465249);
+  color:var(--ink);background:var(--page)
+}
+:root[data-theme=light]{color-scheme:light}
+:root[data-theme=dark]{color-scheme:dark}
+*{box-sizing:border-box}body{margin:0}button,select,input{font:inherit}button,select,input[type=search]{border:1px solid var(--line);border-radius:5px;padding:.47rem .68rem;background:var(--paper);color:inherit}button{cursor:pointer}button:hover{border-color:var(--pine);background:var(--hover)}button:focus-visible,a:focus-visible,select:focus-visible,input:focus-visible{outline:3px solid var(--focus);outline-offset:2px}button:disabled{opacity:.46;cursor:default}button[aria-pressed=true]{background:var(--pine);color:var(--pressed-text);border-color:var(--pine)}header{background:var(--header);color:#fffbea;padding:1.1rem max(4vw,1rem);display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap}h1,h2,h3{font-family:"Source Serif 4",Georgia,serif;margin:0;line-height:1.1}h1{font-size:clamp(1.8rem,4vw,2.7rem)}header small{display:block;margin-top:.4rem;color:#d8e1cf}header button,header select{color:var(--ink)}.actions,nav,.controls,.paging,.buttons{display:flex;align-items:center;flex-wrap:wrap;gap:.5rem}main{max-width:1600px;margin:auto;padding:1.3rem max(3vw,1rem) 3rem}.bar{display:flex;align-items:center;justify-content:space-between;gap:.8rem;flex-wrap:wrap}.controls{padding:.9rem 0;border-bottom:1px solid var(--line)}.controls label{display:flex;gap:.35rem;align-items:center;font-size:.87rem}#stats{color:var(--muted);margin:.5rem 0}.heading{margin:1.3rem 0 .7rem}h2{font-size:1.6rem}.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(280px,100%),1fr));gap:.85rem;margin:1rem 0}.tiles{grid-template-columns:repeat(auto-fill,minmax(min(205px,100%),1fr))}.site,.tile{background:var(--paper);border:1px solid var(--line);border-radius:7px;padding:.85rem}.site{text-align:left;display:flex;flex-direction:column;gap:.6rem}.strip{display:grid;grid-template-columns:repeat(3,1fr);gap:3px;background:var(--strip);align-self:stretch}.strip img{width:100%;aspect-ratio:1;object-fit:contain}.strip:has(img:only-child){grid-template-columns:1fr}.strip:has(img:only-child) img{height:106px}.thumb,img{image-rendering:pixelated}.thumb{display:grid;place-items:center;background:repeating-conic-gradient(var(--check-a) 0% 25%,var(--check-b) 0% 50%) 0 / 16px 16px;border-radius:4px}.thumb img{width:min(100%,256px);aspect-ratio:1;object-fit:contain}.tile h3{font-size:1.2rem;margin:.65rem 0 .3rem}small,.meta{color:var(--muted)}.buttons{margin-top:.6rem;gap:.25rem}.buttons button{font-size:.85rem;padding:.38rem .47rem}.paging{justify-content:flex-end}.note{color:var(--muted);font-size:.87rem}.message{margin:.4rem 0;color:var(--notice)}details{font-size:.85rem;margin-top:.4rem}summary{cursor:pointer}details p{overflow-wrap:anywhere}a{color:var(--pine)}[hidden]{display:none!important}
 .map-name{white-space:pre-wrap;overflow-wrap:anywhere;font-weight:600;margin:.45rem 0 .1rem}.name-source{overflow-wrap:anywhere}.tile details .map-name{margin-top:.6rem}
 .site-open{display:grid;gap:.5rem;text-align:left;width:100%}.site h3{margin:0}.tile select{width:100%;min-width:0}.choice{display:grid;gap:.25rem;margin:.6rem 0}.bulk{display:flex;align-items:center;flex-wrap:wrap;gap:.4rem}.bulk small{flex-basis:100%}
 </style></head><body>
-<header><div><h1>Map art review</h1><small id="overview"></small></div><div class="actions"><button id="export">Export review CSV</button><button id="import">Import review</button><input type="file" id="file" accept=".csv" hidden></div></header>
-<main><div class="bar"><nav><button id="sites">Canvases</button><button id="all">All distinct images</button><button id="terrain">Terrain suggestions</button></nav><form id="lookup"><input type="search" id="query" aria-label="Map ID, PNG filename, title, or pixel key" placeholder="Map ID, filename, title, or pixel key" title="Paste a full pixel key, or use key: followed by its first few characters" size="34"> <button>Find</button></form></div>
+<header><div><h1>Map art review</h1><small id="overview"></small></div><div class="actions"><label>Theme <select id="theme"><option value="system">System</option><option value="light">Light</option><option value="dark">Dark</option></select></label><button id="export">Export review CSV</button><button id="import">Import review</button><input type="file" id="file" accept=".csv" hidden></div></header>
+<main><div class="bar"><nav><button id="sites">Canvases</button><button id="all">All distinct images</button><button id="terrain">Terrain suggestions</button><button id="named">Named map suggestions</button></nav><form id="lookup"><input type="search" id="query" aria-label="Map ID, PNG filename, title, or pixel key" placeholder="Map ID, filename, title, or pixel key" title="Paste a full pixel key, or use key: followed by its first few characters" size="34"> <button>Find</button></form></div>
 <div class="controls"><label id="tierBox">Canvas reuse <select id="tier"><option value="">All locations</option><option value="01_frequent">Frequent</option><option value="02_repeated">Repeated</option><option value="03_single_image">Single image</option><option value="04_uniform_only">Uniform only</option></select></label>
 <label id="decisionBox">Review <select id="filter"><option value="">All decisions</option><option>Unreviewed</option><option>Keep</option><option>Terrain</option><option>Unsure</option></select></label>
 <label id="uniformBox"><input type="checkbox" id="uniform">Include blank and solid</label>
+<label>Entries per page <select id="pageSize"><option>36</option><option selected>72</option><option>144</option><option>288</option></select></label>
 <span id="progress" class="note"></span></div>
 <p id="notice" role="status" class="message"></p><div class="heading"><h2 id="title"></h2><p id="stats"></p></div>
-<div id="canvasActions"></div><button id="applyTerrain" hidden></button> <button id="undo" hidden>Undo last bulk decision</button>
+<div id="canvasActions"></div><button id="applySuggestions" hidden></button> <button id="undo" hidden>Undo last bulk decision</button>
 <div class="paging" id="topPage"></div><div class="grid" id="grid"></div><div class="paging" id="bottomPage"></div>
 </main><script type="application/json" id="data">__MAP_DATA__</script>
 <script type="application/json" id="names">__MAP_NAMES__</script>
@@ -315,6 +334,17 @@ const sites = JSON.parse(document.getElementById("data").textContent);
 const $ = id => document.getElementById(id);
 const names = JSON.parse($("names").textContent);
 const terrainReasons = JSON.parse($("terrainData").textContent);
+const theme=$("theme");
+theme.value=document.documentElement.dataset.theme||"system";
+theme.onchange=()=>{
+  const root=document.documentElement;
+  if(theme.value==="system")delete root.dataset.theme;
+  else root.dataset.theme=theme.value;
+  try {
+    if(theme.value==="system")localStorage.removeItem(themeKey);
+    else localStorage.setItem(themeKey,theme.value)
+  } catch {}
+};
 const nf = n => Number(n).toLocaleString("en-US");
 const labels = ["Keep","Terrain","Unsure"];
 const storeKey = "framed-map-review/__COLLECTION_KEY__";
@@ -328,14 +358,24 @@ for(const s of sites) for(const t of s.tiles){
   for(const id of t.ids){g.ids.push(id);byId.set(id,g)}
 }
 const allTiles = [...globalTiles.values()].sort((a,b)=>a.id-b.id);
-const defaultNames=new Map();
+const defaultNames=new Map(), namedKeys=new Set();
 for(const [key,candidates] of Object.entries(names)){
   const titles=Object.keys(candidates).filter(Boolean);
+  if(titles.length)namedKeys.add(key);
   if(titles.length===1)defaultNames.set(key,titles[0])
 }
 function reviewName(id){return chosenNames.get(id)??defaultNames.get(byId.get(id).key)??""}
 const terrainTiles = allTiles.filter(t=>terrainReasons[t.id]&&!Object.keys(names[t.key]||{}).length);
 function pendingTerrain(){return terrainTiles.filter(t=>!decisions.has(t.id)&&!reviewName(t.id))}
+function pendingNamed(){
+  const tiles=[];
+  for(const t of allTiles){
+    const hasCandidates=namedKeys.has(t.key);
+    const ids=t.ids.filter(id=>!decisions.has(id)&&(chosenNames.has(id)?Boolean(chosenNames.get(id)):hasCandidates));
+    if(ids.length)tiles.push({...t,id:ids[0],ids})
+  }
+  return tiles
+}
 function notice(text){$("notice").textContent=text}
 try {
   const loaded=JSON.parse(localStorage.getItem(storeKey));
@@ -381,13 +421,12 @@ $("undo").onclick=()=>{
   for(const [id,value] of lastBulk)setValue(decisions,id,value);
   lastBulk=null;notice("Restored the previous decisions.");save();render()
 };
-$("applyTerrain").onclick=()=>{
-  const tiles=pendingTerrain();
-  if(!tiles.length)return;
-  lastBulk=tiles.map(t=>[t.id,undefined]);
-  for(const t of tiles)decisions.set(t.id,"Terrain");
-  notice("Marked "+nf(tiles.length)+" suggested map IDs Terrain.");save();render()
-};
+function applySuggestions(ids,label){
+  if(!ids.length)return;
+  lastBulk=ids.map(id=>[id,undefined]);
+  for(const id of ids)decisions.set(id,label);
+  notice("Marked "+nf(ids.length)+" suggested map IDs "+label+".");save();render()
+}
 function siteCard(s){
   const card=el("article","site");
   const open=button("",()=>{homePage=page;site=s;$("uniform").checked=s.count===0;openMode("site")});open.className="site-open";
@@ -405,6 +444,7 @@ function tileCard(t){
   const targets=wanted===null?t.ids:[wanted];
   card.append(link,el("h3","","Map "+id));
   if(mode==="terrain")card.append(el("p","note",terrainReasons[id]));
+  if(mode==="named"&&targets.length>1)card.append(el("small","",nf(targets.length)+" pending IDs with these pixels"));
   const entries=Object.entries(names[t.key]||{}).sort((a,b)=>Number(b[1].includes(id))-Number(a[1].includes(id)));
   function showName(parent,[name,sources]){
     parent.append(el("p","map-name",name));
@@ -455,12 +495,13 @@ function pager(id,pages){
 }
 function render(){
   const home=mode==="sites";
-  const suggestions=mode==="terrain";
-  const pending=pendingTerrain();
-  $("terrain").textContent="Terrain suggestions ("+nf(pending.length)+")";
-  pressed("terrain",suggestions);
-  $("applyTerrain").hidden=!suggestions||!pending.length;
-  $("applyTerrain").textContent="Mark all "+nf(pending.length)+" as Terrain";
+  const suggestions=mode==="terrain"||mode==="named";
+  const terrain=pendingTerrain(), named=pendingNamed();
+  const namedCount=named.reduce((sum,t)=>sum+t.ids.length,0);
+  $("terrain").textContent="Terrain suggestions ("+nf(terrain.length)+")";
+  $("named").textContent="Named map suggestions ("+nf(namedCount)+")";
+  pressed("terrain",mode==="terrain");pressed("named",mode==="named");
+  $("applySuggestions").hidden=true;
   $("canvasActions").replaceChildren();if(mode==="site")$("canvasActions").append(canvasControls(site));
   $("undo").hidden=!lastBulk;
   $("tierBox").hidden=!home;$("decisionBox").hidden=home||suggestions||wanted!==null||!!searchText;$("uniformBox").hidden=home||suggestions||wanted!==null||!!searchText;
@@ -470,9 +511,16 @@ function render(){
     rows=sites.filter(s=>!$("tier").value||s.folder.split("/")[0]===$("tier").value);
     $("title").textContent="Canvas contact sheets";$("stats").textContent=nf(rows.length)+" footprints · most distinct images first. Open a canvas to review its tiles."
   }else if(suggestions){
-    rows=pending;
-    $("title").textContent="Terrain suggestions";
-    $("stats").textContent="Unreviewed, unnamed Overworld images with one ID and one distinct image on their canvas. Review the pixel evidence or apply Terrain to all suggestions across every page."
+    const isNamed=mode==="named";
+    rows=isNamed?named:terrain;
+    const ids=rows.flatMap(t=>t.ids),label=isNamed?"Keep":"Terrain";
+    $("applySuggestions").hidden=!ids.length;
+    $("applySuggestions").textContent="Mark all "+nf(ids.length)+" as "+label;
+    $("applySuggestions").onclick=()=>applySuggestions(ids,label);
+    $("title").textContent=isNamed?"Named map suggestions":"Terrain suggestions";
+    $("stats").textContent=isNamed
+      ?"Unreviewed IDs with a candidate or chosen name. Keep applies across every page and leaves name choices as they are."
+      :"Unreviewed, unnamed Overworld images with one ID and one distinct image on their canvas. Review the pixel evidence or apply Terrain to all suggestions across every page."
   }else{
     rows=wanted!==null?[byId.get(wanted)]:mode==="site"?site.tiles:allTiles;
     if(mode==="pixelKey"){
@@ -490,17 +538,19 @@ function render(){
     const scope=wanted!==null?"Changes apply to this map ID.":mode==="site"?"Changes apply to copies on this canvas.":"Changes apply to all copies of each image.";
     $("stats").textContent=nf(rows.length)+" distinct image"+(rows.length===1?"":"s")+". "+scope
   }
-  const size=home?18:36,pages=Math.ceil(rows.length/size);
+  const size=Number($("pageSize").value),pages=Math.ceil(rows.length/size);
   page=Math.max(0,Math.min(page,pages-1));if(home)homePage=page;
   $("grid").className=home?"grid":"grid tiles";
   $("grid").replaceChildren(...rows.slice(page*size,(page+1)*size).map(home?siteCard:tileCard));
-  if(!rows.length)$("grid").append(el("p","",suggestions?"No pending terrain suggestions.":"No results for these filters."));
+  if(!rows.length)$("grid").append(el("p","",mode==="named"?"No pending named map suggestions.":mode==="terrain"?"No pending terrain suggestions.":"No results for these filters."));
   pager("topPage",pages);pager("bottomPage",pages);
   $("progress").textContent=nf(decisions.size)+" / "+nf(byId.size)+" map IDs reviewed"
 }
 $("overview").textContent=nf(byId.size)+" map IDs · "+nf(sites.length)+" footprints";
 $("sites").onclick=()=>openMode("sites");$("all").onclick=()=>openMode("all");
 $("terrain").onclick=()=>openMode("terrain");
+$("named").onclick=()=>openMode("named");
+$("pageSize").onchange=()=>{page=0;homePage=0;render()};
 for(const id of ["tier","filter","uniform"])$(id).onchange=()=>{page=0;render()};
 $("lookup").onsubmit=e=>{
   e.preventDefault();
