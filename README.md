@@ -36,6 +36,8 @@ Open **Named map suggestions** for unreviewed IDs with a recorded title, a title
 
 To review a tile individually, open a canvas or choose **All distinct images**. If a pixel key has exactly one distinct candidate title, **Chosen name** defaults to it for every matching ID, even when several source IDs supplied that title. With multiple candidates, choose one manually. You can clear a default with **No name selected**. Manual choices take priority. Inside a canvas, tile edits apply to that canvas’s copies. In **All distinct images**, they apply to every ID with those pixels. Look up one numeric map ID to edit just that copy. Bulk canvas decisions preserve chosen names.
 
+The progress counter counts individual map IDs, including blank and solid-color copies. A second count shows progress on nonuniform maps. Choose **Review remaining IDs** to see every ID still missing a decision, even when blank and solid maps are hidden in the gallery. Each card groups the pending copies of one image. Decisions and name choices in this view apply only to those pending copies.
+
 Click **Export review CSV** and save `map-review.csv` in your working folder. Each reviewed or named ID gets a row with `map_id`, `pixel_key`, `decision`, and `chosen_name`. The export includes single-candidate defaults even on tiles you haven’t opened. A name alone leaves the decision blank. Clearing a default is also saved and exported. The scanner and name matcher select rows marked **Keep**. Include the full DAT directory when building the gallery so copies under other IDs are eligible.
 
 Use **Import review** to restore decisions and names. An import fills missing choices and preserves existing choices when reviewers disagree.
@@ -49,6 +51,18 @@ python scan_map_dats.py "D:\Backup\world\data" --pixel-keys --out "map-dat-metad
 ```
 
 This produces one row per DAT with its ID, dimension, canvas center, scale, flags, and additional saved tags in `extra_nbt_json`. Saved frame markers appear there when present. Omit `--pixel-keys` for metadata alone. The gallery and DAT inventory use the same pixel-key calculation. A map's center locates its depicted area. Custom titles on individual copies are recovered in the world scan.
+
+### Export kept DATs and PNGs
+
+Run this after finalizing the review. Point it at the original DAT folder and give it a new output folder.
+
+```powershell
+python export_kept.py "D:\Backup\world\data" --review-csv "map-review.csv" --out "kept-maps"
+```
+
+Each `Keep` ID gets a byte-for-byte copy in `dats/map_<id>.dat` and a 128×128 preview in `pngs/map_<id>.png`. The helper verifies the gallery pixel key against the copied DAT and renders the PNG from those same pixels. The export needs only the DAT folder and CSV.
+
+`manifest.csv` lists `original_map_id`, `pixel_key`, `chosen_name`, `dat_path`, and `png_path` in numeric ID order. Paths are relative to the export folder. IDs with identical pixels keep their own rows and names. An empty chosen name stays empty. If a kept DAT is missing, ambiguous, unreadable, or has different pixels, the helper reports the error and publishes no partial export. After correcting the input, rerun the same command.
 
 ## 2. Search for names
 
