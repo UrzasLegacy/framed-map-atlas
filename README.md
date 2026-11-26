@@ -99,6 +99,25 @@ Repeat `--names-report` on the catalog command to combine scans from the same ma
 
 Artwork groups use adjacent, coplanar frames with a common facing, together with similarities in the tile names. An unnamed patch can join an adjacent named group. Conflicting neighboring groups and missing tiles are flagged for review. Rows and columns start at 1. For example, filter groups by width 3, height 3, and tile count 9 for complete 3×3 candidates.
 
+## Reconstruct multi-tile displays for review
+
+Use the kept export's manifest and PNGs together with an existing scan's `frames.csv`. Choose the fullest scan of the same map-ID namespace. A scan previously restricted to selected IDs can leave out neighboring frames. If the report covers unrelated saves that reuse IDs, select the matching world with `--world "world"` (use its exact CSV value).
+
+```powershell
+python -m pip install "Pillow>=9.1"
+python reconstruct_artworks.py --manifest "kept-maps\manifest.csv" --frames "map-report\frames.csv" --map-index "sorted-maps\map-index.csv" --out "artwork-review"
+```
+
+Open `artwork-review/review.html`. The gallery starts with filled rectangles, then shows partial layouts. Click a composite PNG to inspect it or expand the tile list to see original IDs, chosen names, and each display's location. Gold crosses indicate scanned IDs outside the kept manifest. Gray cells have no tile assigned to that candidate. A full rectangle describes the observed grid; adjoining pieces can still be grouped together, and a missing outer row can make a partial artwork look complete.
+
+Open **Source canvases** on an artwork to see each map-making canvas's dimension, center X/Z, scale, and placement count. Under **Tiles and displays**, find a gold cross by row and column to see its original map ID and source canvas. To search for a missing piece, filter the original sorter's `map-index.csv` by that dimension, `center_x`, `center_z`, and `scale`. Its `path` column leads to every indexed image made on that canvas. Other tiles' canvases are leads for gray gaps, which have no recorded map ID in the layout.
+
+Use a full `--map-index` from the same save to look up kept and excluded IDs. Alternatively pass `--data-dir "D:\Backup\world\data"` for the original DATs. With neither option the helper reads the DAT paths in the kept manifest. Unavailable coordinates are shown as unknown. In `layouts.json`, each tile carries its `source_canvas` and each layout lists its distinct `source_canvases`; frame coordinates are recorded separately under `displays`.
+
+The helper groups touching frames on the same face and plane. It uses the frame item's observed name for grouping when available and otherwise tries the chosen name. It renders each kept tile at its displayed quarter-turn, with north at the top on floors and ceilings. An absent rotation uses the default angle and is flagged. Several placements of one ID remain separate tiles. Displays with the same ordered IDs, grid positions, and preview rotations share one preview and retain each location. Different original IDs remain distinguishable even if their pixels match.
+
+The output folder can be shared as a whole. `previews/` holds composite PNGs up to 1,024 pixels on the longer side. `layouts.json` records each candidate's dimensions, one-based row and column, original IDs, chosen names, pixel keys, quarter-turns, and observed displays with coordinates and raw rotations. `ungrouped.csv` accounts for kept IDs outside every candidate, including IDs absent from the supplied scan. Conflicting placements and other unplaceable kept frames appear in `unplaced_frames` in the JSON. All three outputs use the original map IDs.
+
 ## Export original DATs or PNGs from a scan
 
 ```powershell
