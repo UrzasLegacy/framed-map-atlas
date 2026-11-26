@@ -8,7 +8,7 @@ import json
 import re
 import sys
 import tempfile
-from collections import defaultdict
+from collections import Counter, defaultdict
 from pathlib import Path
 from urllib.parse import quote
 from zipfile import ZIP_DEFLATED, ZipFile
@@ -50,6 +50,7 @@ def load_titles(reports):
 def review_page(rows, titles=None):
     sites = {}
     evidence = defaultdict(lambda: defaultdict(set))
+    terrain = {}
     for row in rows:
         path = row.get("path")
         if not path:
@@ -62,6 +63,8 @@ def review_page(rows, titles=None):
                                          "x": row.get("center_x"), "z": row.get("center_z"),
                                          "scale": row.get("scale"), "tiles": {}})
         map_id = int(row["map_id"])
+        if row.get("terrain_reason"):
+            terrain[map_id] = row["terrain_reason"]
         digest = row.get("pixel_sha256") or f"unclassified-{map_id}"
         if titles:
             for name, source_ids in titles.get(map_id, {}).items():
@@ -80,9 +83,51 @@ def review_page(rows, titles=None):
     names = {digest: {name: sorted(sources[name]) for name in sorted(sources, key=lambda n: (n.casefold(), n))}
              for digest, sources in evidence.items()}
     name_data = json.dumps(names, separators=(",", ":"), ensure_ascii=True).replace("<", "\\u003c")
+    terrain_data = json.dumps(terrain, ensure_ascii=True, separators=(",", ":")).replace("<", "\\u003c")
     before_names, after_names = REVIEW_TEMPLATE.split("__MAP_NAMES__")
     return (before_names.replace("__COLLECTION_KEY__", key).replace("__MAP_DATA__", data)
-            + name_data + after_names.replace("__COLLECTION_KEY__", key)).encode("utf-8")
+            + name_data + after_names.replace("__COLLECTION_KEY__", key).replace("__TERRAIN_DATA__", terrain_data)).encode("utf-8")
+
+
+# Vanilla surface palette families: grass, sand, foliage, snow, clay, dirt, stone, water and wood.
+SURFACE_COLORS = (1, 2, 7, 8, 9, 10, 11, 12, 13)
+BASE_INDEX = bytes(i // 4 for i in range(256))
+
+
+def terrain_pattern(colors):
+    """Explain a conservative pixel match. An empty string leaves the map for manual review."""
+    base = colors.translate(BASE_INDEX)
+    visible = len(base) - base.count(0)
+    if visible < 2048:
+        return ""
+    counts = [base.count(i) for i in SURFACE_COLORS]
+    surface = sum(counts) / visible
+    if surface < 0.95 or sum(n >= visible * 0.02 for n in counts) < 3:
+        return ""
+    # Flags and repeating patterns can also consist of broad surface-color bands.
+    if len({base[y:y+128] for y in range(0, len(base), 128)}) < 32:
+        return ""
+    if len({base[x::128] for x in range(128)}) < 32:
+        return ""
+    # Sample at a fixed stride. A landscape tends to agree with nearby pixels
+    # more often than with pixels several blocks away. Ignore unexplored areas.
+    pairs = near = far = 0
+    for y in range(0, 120, 3):
+        for x in range(0, 120, 3):
+            p = y * 128 + x
+            value = base[p]
+            if not value:
+                continue
+            for step in (1, 128):
+                adjacent, distant = base[p + step], base[p + 8 * step]
+                if adjacent and distant:
+                    pairs += 1
+                    near += value == adjacent
+                    far += value == distant
+    if pairs < 250 or near < 0.73 * pairs or near - far < 0.10 * pairs:
+        return ""
+    return (f"{surface:.0%} surface colors. Adjacent pixels share a base color {near/pairs:.0%} "
+            f"of the time, versus {far/pairs:.0%} eight pixels apart.")
 
 
 def footprint(data):
@@ -140,6 +185,7 @@ def sort_maps(data_dir, write, threshold, png_dir=None, names_reports=()):
         raise ValueError(f"no map DAT files in {data_dir}")
     groups = defaultdict(lambda: defaultdict(list))
     rows = {}
+    pattern_by_key = {}
     issues = 0
     for i in ids:
         row = rows[i] = {"map_id": i}
@@ -153,6 +199,9 @@ def sort_maps(data_dir, write, threshold, png_dir=None, names_reports=()):
             fp = footprint(data)
             digest, kind = pixel_signature(data["colors"])
             row.update(pixel_kind=kind, pixel_sha256=digest)
+            if kind == "image" and fp and fp[0] in ("minecraft:overworld", 0) and not data.get("locked"):
+                if digest not in pattern_by_key:
+                    pattern_by_key[digest] = terrain_pattern(data["colors"])
             if fp is not None:
                 row.update(zip(("dimension", "center_x", "center_z", "scale"), fp))
             else:
@@ -166,6 +215,7 @@ def sort_maps(data_dir, write, threshold, png_dir=None, names_reports=()):
                 row["path"] = f"unclassified/{pngs[i][0].name}"
                 write(row["path"], pngs[i][0].read_bytes())
 
+    copies_by_key = Counter(row.get("pixel_sha256") for row in rows.values())
     sites = []
     for fp, patterns in groups.items():
         count = sum(kind == "image" for kind, _ in patterns)
@@ -173,8 +223,10 @@ def sort_maps(data_dir, write, threshold, png_dir=None, names_reports=()):
         if fp is not None:
             sites.append(dict(dimension=fp[0], center_x=fp[1], center_z=fp[2], scale=fp[3],
                               distinct_nonuniform=count, map_ids=sum(map(len, patterns.values())), folder=base))
-        for (kind, _), copies in patterns.items():
+        for (kind, digest), copies in patterns.items():
             representative = copies[0]
+            if count == 1 and copies_by_key[digest] == 1 and pattern_by_key.get(digest):
+                rows[representative]["terrain_reason"] = pattern_by_key[digest]
             image = render(dats[representative][0]) if pngs is None else None
             for i in copies:
                 parts = [base]
@@ -190,7 +242,7 @@ def sort_maps(data_dir, write, threshold, png_dir=None, names_reports=()):
     write("footprints.csv", csv_table(("dimension", "center_x", "center_z", "scale", "distinct_nonuniform",
                                        "map_ids", "folder"), sites))
     write("map-index.csv", csv_table(("map_id", "path", "dimension", "center_x", "center_z", "scale",
-                                      "pixel_kind", "representative_id", "pixel_sha256", "issue"), rows.values()))
+                                      "pixel_kind", "representative_id", "pixel_sha256", "issue", "terrain_reason"), rows.values()))
     write("review.html", review_page(rows.values(), titles))
     return len(rows), len(sites), issues
 
@@ -246,21 +298,23 @@ REVIEW_TEMPLATE = r'''<!doctype html>
 .site-open{display:grid;gap:.5rem;text-align:left;width:100%}.site h3{margin:0}.tile select{width:100%;min-width:0}.choice{display:grid;gap:.25rem;margin:.6rem 0}.bulk{display:flex;align-items:center;flex-wrap:wrap;gap:.4rem}.bulk small{flex-basis:100%}
 </style></head><body>
 <header><div><h1>Map art review</h1><small id="overview"></small></div><div class="actions"><button id="export">Export review CSV</button><button id="import">Import review</button><input type="file" id="file" accept=".csv" hidden></div></header>
-<main><div class="bar"><nav><button id="sites">Canvases</button><button id="all">All distinct images</button></nav><form id="lookup"><input type="search" id="query" aria-label="Map ID, PNG filename, title, or pixel key" placeholder="Map ID, filename, title, or pixel key" title="Paste a full pixel key, or use key: followed by its first few characters" size="34"> <button>Find</button></form></div>
+<main><div class="bar"><nav><button id="sites">Canvases</button><button id="all">All distinct images</button><button id="terrain">Terrain suggestions</button></nav><form id="lookup"><input type="search" id="query" aria-label="Map ID, PNG filename, title, or pixel key" placeholder="Map ID, filename, title, or pixel key" title="Paste a full pixel key, or use key: followed by its first few characters" size="34"> <button>Find</button></form></div>
 <div class="controls"><label id="tierBox">Canvas reuse <select id="tier"><option value="">All locations</option><option value="01_frequent">Frequent</option><option value="02_repeated">Repeated</option><option value="03_single_image">Single image</option><option value="04_uniform_only">Uniform only</option></select></label>
 <label id="decisionBox">Review <select id="filter"><option value="">All decisions</option><option>Unreviewed</option><option>Keep</option><option>Terrain</option><option>Unsure</option></select></label>
 <label id="uniformBox"><input type="checkbox" id="uniform">Include blank and solid</label>
 <span id="progress" class="note"></span></div>
 <p id="notice" role="status" class="message"></p><div class="heading"><h2 id="title"></h2><p id="stats"></p></div>
-<div id="canvasActions"></div><button id="undo" hidden>Undo last canvas decision</button>
+<div id="canvasActions"></div><button id="applyTerrain" hidden></button> <button id="undo" hidden>Undo last bulk decision</button>
 <div class="paging" id="topPage"></div><div class="grid" id="grid"></div><div class="paging" id="bottomPage"></div>
 </main><script type="application/json" id="data">__MAP_DATA__</script>
 <script type="application/json" id="names">__MAP_NAMES__</script>
+<script type="application/json" id="terrainData">__TERRAIN_DATA__</script>
 <script>
 "use strict";
 const sites = JSON.parse(document.getElementById("data").textContent);
 const $ = id => document.getElementById(id);
 const names = JSON.parse($("names").textContent);
+const terrainReasons = JSON.parse($("terrainData").textContent);
 const nf = n => Number(n).toLocaleString("en-US");
 const labels = ["Keep","Terrain","Unsure"];
 const storeKey = "framed-map-review/__COLLECTION_KEY__";
@@ -274,6 +328,8 @@ for(const s of sites) for(const t of s.tiles){
   for(const id of t.ids){g.ids.push(id);byId.set(id,g)}
 }
 const allTiles = [...globalTiles.values()].sort((a,b)=>a.id-b.id);
+const terrainTiles = allTiles.filter(t=>terrainReasons[t.id]&&!Object.keys(names[t.key]||{}).length);
+function pendingTerrain(){return terrainTiles.filter(t=>!decisions.has(t.id)&&!chosenNames.has(t.id))}
 function notice(text){$("notice").textContent=text}
 try {
   const loaded=JSON.parse(localStorage.getItem(storeKey));
@@ -317,7 +373,14 @@ function canvasControls(s){
 $("undo").onclick=()=>{
   if(!lastBulk)return;
   for(const [id,value] of lastBulk)setValue(decisions,id,value);
-  lastBulk=null;notice("Restored the previous canvas decisions.");save();render()
+  lastBulk=null;notice("Restored the previous decisions.");save();render()
+};
+$("applyTerrain").onclick=()=>{
+  const tiles=pendingTerrain();
+  if(!tiles.length)return;
+  lastBulk=tiles.map(t=>[t.id,undefined]);
+  for(const t of tiles)decisions.set(t.id,"Terrain");
+  notice("Marked "+nf(tiles.length)+" suggested map IDs Terrain.");save();render()
 };
 function siteCard(s){
   const card=el("article","site");
@@ -335,6 +398,7 @@ function tileCard(t){
   const id=wanted??t.id;
   const targets=wanted===null?t.ids:[wanted];
   card.append(link,el("h3","","Map "+id));
+  if(mode==="terrain")card.append(el("p","note",terrainReasons[id]));
   const entries=Object.entries(names[t.key]||{}).sort((a,b)=>Number(b[1].includes(id))-Number(a[1].includes(id)));
   function showName(parent,[name,sources]){
     parent.append(el("p","map-name",name));
@@ -385,14 +449,24 @@ function pager(id,pages){
 }
 function render(){
   const home=mode==="sites";
+  const suggestions=mode==="terrain";
+  const pending=pendingTerrain();
+  $("terrain").textContent="Terrain suggestions ("+nf(pending.length)+")";
+  pressed("terrain",suggestions);
+  $("applyTerrain").hidden=!suggestions||!pending.length;
+  $("applyTerrain").textContent="Mark all "+nf(pending.length)+" as Terrain";
   $("canvasActions").replaceChildren();if(mode==="site")$("canvasActions").append(canvasControls(site));
   $("undo").hidden=!lastBulk;
-  $("tierBox").hidden=!home;$("decisionBox").hidden=home||wanted!==null||!!searchText;$("uniformBox").hidden=home||wanted!==null||!!searchText;
+  $("tierBox").hidden=!home;$("decisionBox").hidden=home||suggestions||wanted!==null||!!searchText;$("uniformBox").hidden=home||suggestions||wanted!==null||!!searchText;
   pressed("sites",home);pressed("all",mode==="all"&&wanted===null);
   let rows;
   if(home){
     rows=sites.filter(s=>!$("tier").value||s.folder.split("/")[0]===$("tier").value);
     $("title").textContent="Canvas contact sheets";$("stats").textContent=nf(rows.length)+" footprints · most distinct images first. Open a canvas to review its tiles."
+  }else if(suggestions){
+    rows=pending;
+    $("title").textContent="Terrain suggestions";
+    $("stats").textContent="Unreviewed, unnamed Overworld images with one ID and one distinct image on their canvas. Review the pixel evidence or apply Terrain to all suggestions across every page."
   }else{
     rows=wanted!==null?[byId.get(wanted)]:mode==="site"?site.tiles:allTiles;
     if(mode==="pixelKey"){
@@ -414,12 +488,13 @@ function render(){
   page=Math.max(0,Math.min(page,pages-1));if(home)homePage=page;
   $("grid").className=home?"grid":"grid tiles";
   $("grid").replaceChildren(...rows.slice(page*size,(page+1)*size).map(home?siteCard:tileCard));
-  if(!rows.length)$("grid").append(el("p","","No results for these filters."));
+  if(!rows.length)$("grid").append(el("p","",suggestions?"No pending terrain suggestions.":"No results for these filters."));
   pager("topPage",pages);pager("bottomPage",pages);
   $("progress").textContent=nf(decisions.size)+" / "+nf(byId.size)+" map IDs reviewed"
 }
 $("overview").textContent=nf(byId.size)+" map IDs · "+nf(sites.length)+" footprints";
 $("sites").onclick=()=>openMode("sites");$("all").onclick=()=>openMode("all");
+$("terrain").onclick=()=>openMode("terrain");
 for(const id of ["tier","filter","uniform"])$(id).onchange=()=>{page=0;render()};
 $("lookup").onsubmit=e=>{
   e.preventDefault();

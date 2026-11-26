@@ -1,13 +1,14 @@
 import csv
 import io
 import json
+import math
 import tempfile
 import unittest
 from pathlib import Path
 from zipfile import ZipFile
 
 from map_assets import render
-from sort_canvases import load_titles, main, review_page
+from sort_canvases import load_titles, main, review_page, terrain_pattern
 from test_scanner import tag
 
 
@@ -24,6 +25,32 @@ class CanvasSortTest(unittest.TestCase):
         path = self.data / f"map_{i}.dat"
         path.write_bytes(b"\x0a\0\0" + tag({"data": saved})[1])
         return path
+
+    def test_terrain_evidence_and_canvas_exclusions(self):
+        families = (1, 2, 7, 10, 12)
+        def landscape(offset):
+            return bytes(4 * families[int((x + 7*math.sin(y/5) + y + offset)/15) % 5] + 1
+                         for y in range(128) for x in range(128))
+        def example(i, x, colors, dimension="minecraft:overworld", locked=0):
+            data = {"dimension": dimension, "xCenter": x, "zCenter": 0, "colors": colors, "locked": locked}
+            (self.data / f"map_{i}.dat").write_bytes(b"\x0a\0\0" + tag({"data": data})[1])
+        example(1, 0, landscape(0))
+        example(2, 128, landscape(1), locked=1)
+        example(3, 256, landscape(2))
+        example(4, 384, landscape(2))  # Shared pixels across two canvases.
+        example(5, 512, landscape(3))
+        example(6, 512, landscape(4))  # Reused canvas.
+        example(7, 640, landscape(5), "minecraft:the_nether")
+        example(8, 768, bytes(16384))
+        self.assertFalse(terrain_pattern(bytes(4*families[(x//8)%5] for x in range(128)) * 128))
+        out = self.root / "review"
+        self.assertEqual(main([str(self.data), "--out", str(out)]), 0)
+        with (out / "map-index.csv").open(encoding="utf-8-sig", newline="") as f:
+            rows = list(csv.DictReader(f))
+        self.assertEqual([int(r["map_id"]) for r in rows if r["terrain_reason"]], [1])
+        for html in ((out / "review.html").read_bytes(), review_page(rows)):
+            hints = json.loads(html.split(b'id="terrainData">')[1].split(b'</script>')[0])
+            self.assertEqual(hints, {"1": rows[0]["terrain_reason"]})
 
     def test_rank_by_distinct_pixels_and_preserve_all_ids(self):
         a = bytes([4, 5]) * 8192

@@ -18,7 +18,15 @@ python sort_canvases.py "D:\Backup\world\data" --out "sorted-maps"
 
 Open `sorted-maps/review.html`. Each canvas groups maps by dimension, center coordinates, and scale. Repeated use of one canvas is a lead for finding artwork. Click a canvas or **All distinct images** to see its tiles. Use **Find** with an ID, a PNG filename, a name from a loaded report, a full pixel key, or a prefix such as `key:7fa2`.
 
-On a canvas card, **Keep**, **Terrain**, and **Unsure** mark every map ID at that footprint, including copies, blank tiles, and tiles hidden by a filter. The same controls appear inside the canvas. Other canvases keep their decisions, even when they contain identical artwork. **Undo last canvas decision** restores the prior values until the next decision edit, import, or reload.
+On a canvas card, **Keep**, **Terrain**, and **Unsure** mark every map ID at that footprint, including copies, blank tiles, and tiles hidden by a filter. The same controls appear inside the canvas. Other canvases keep their decisions, even when they contain identical artwork. **Undo last bulk decision** restores the prior values until the next decision edit, import, or reload.
+
+### Mark likely terrain in bulk
+
+Open **Terrain suggestions** to preview the eligible maps and the pixel evidence for each. **Mark all as Terrain** applies the decision across every page of suggestions. You can override any tile afterward, undo the last batch, or export the decisions in the normal review CSV. Opening the gallery alone leaves the review untouched.
+
+The sorter considers unlocked Overworld tiles with known coordinates, a unique image ID, and just one distinct nonuniform image at their footprint in the collection. Use the full DAT directory so the sorter can see reused canvases and copies. A candidate needs at least 2,048 explored pixels. At least 95% of those pixels must belong to common surface-color families, with three families each covering at least 2%. The pixel pattern must vary across rows and columns and show stronger color agreement between immediate neighbors than between pixels eight blocks apart. These are heuristics: landscape artwork can qualify, and oceans, snowy areas, and heavily built terrain can be missed.
+
+The gallery skips tiles with a title in the loaded reports, a name selected in the review, or an existing decision. Supply name reports when available. The sorter writes pixel evidence to `terrain_reason` in `map-index.csv`, so refreshing the gallery preserves it. For collections made before this feature, sort the DATs into a new directory to calculate it.
 
 To review a tile individually, open a canvas or choose **All distinct images**. When a tile has candidate titles, use **Chosen name** to select one or clear the choice. Inside a canvas, tile edits apply to that canvas’s copies. In **All distinct images**, they apply to every ID with those pixels. Look up one numeric map ID to edit just that copy. Bulk canvas decisions preserve chosen names.
 
