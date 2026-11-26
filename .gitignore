@@ -12,3 +12,5 @@ dist/
 map-dat-metadata.csv
 curated-map-names.csv
 map-review.csv
+/kept-maps
+selected-all-dimensions-all-chunks-all-containers/
