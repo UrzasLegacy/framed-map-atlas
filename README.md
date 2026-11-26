@@ -144,3 +144,42 @@ python -m PyInstaller --onefile --windowed --noupx --name "Map Art Sorter" map_s
 ```
 
 Distribute the resulting `dist/Map Art Sorter.exe` as a separate release asset.
+
+
+# Result file reference
+
+**Which page do I open?** Open `sorted-maps/review.html` to choose which individual map IDs to keep and what to name them. Open `artwork-review/review.html` to inspect reconstructed multi-tile displays. The numbered pages beside it belong to the same gallery. Folder names below match the examples in this README. Your `--out` choices determine their locations.
+
+### Map sorting and reviewer decisions
+
+| Result | Produced by · source | What you use it for |
+| --- | --- | --- |
+| `sorted-maps/map-index.csv` | `sort_canvases.py` or the Map Art Sorter app · original map DATs | Look up an original ID, PNG path, pixel hash, or canvas center. Give the full index to reconstruction as `--map-index` to locate excluded tiles too. |
+| `sorted-maps/footprints.csv` | Same sorter run · maps grouped by dimension, center X/Z, and scale | Find a canvas folder and see how many IDs and distinct nonuniform images it contains. |
+| `sorted-maps/…/map_<id>.png` | Same sorter run · rendered DAT pixels or supplied `--png-dir` images | Inspect individual tiles. The `path` column in `map-index.csv` gives each PNG’s exact location. |
+| `sorted-maps/review.html` | Created by the sorter. `review_gallery.py` can rebuild it from `map-index.csv` and name reports. | Review tiles, select names, and export decisions. Keep it with its PNG folders. |
+| `map-review.csv` | **Export review CSV** in the sorter’s review page · decisions and chosen names in the browser | This is the finalized reviewer handoff. Find it in the browser’s download location. Pass it as `--review-csv` to `export_kept.py`, `curated_names.py`, or a Keep-filtered world scan. |
+| `map-dat-metadata.csv` | `scan_map_dats.py` · original DAT folder | Inspect saved NBT fields and optional pixel keys without scanning world regions. |
+
+### World scan and name recovery
+
+| Result | Produced by · source | What you use it for |
+| --- | --- | --- |
+| `map-report/frames.csv` | `scan_maps.py` · filled maps in ordinary and glow item frames | Give this to reconstruction as `--frames`. Its XYZ, facing, and rotation describe where a tile was **displayed**. The sorter’s canvas X/Z describes the area the map **depicts**. |
+| `map-report/containers.csv` | `scan_maps.py --include-containers` · saved item stacks in supported inventories | Trace a recovered name to its holder and slot. |
+| `map-report/map-names.json` | `scan_maps.py` · observed names on framed and, when enabled, stored maps | Supply as `--names-report` to the name matcher, sorter, or gallery updater. |
+| `map-report/scan-summary.json` | `scan_maps.py` · scan counters, selection, and read errors | Check which IDs and sources the scan covered before interpreting missing results. |
+| `map-report/artwork-groups.json` | `scan_maps.py` · neighboring frame observations and observed names | Inspect the scan’s initial grouping guesses. The reconstruction helper reads `frames.csv` directly to build the kept-artwork gallery. |
+| `curated-map-names.csv` | `curated_names.py` · DAT pixels, `map-review.csv`, and one or more scan name reports | Load candidate names and their source IDs into the sorter’s review page. A reviewer’s final choice goes into `map-review.csv`. |
+| `map-exports/map-exports.json` and `map-exports/maps/world-001/map_<id>.dat` or `.png` | `scan_maps.py --export-maps` · IDs in a new or existing scan report plus the source DATs | Inspect assets for scan-observed IDs. The JSON identifies the world for each numbered folder and records missing or failed exports. |
+
+### Kept export and reconstructed artwork
+
+| Result | Produced by · source | What you use it for |
+| --- | --- | --- |
+| `kept-maps/manifest.csv` | `export_kept.py` · finalized `map-review.csv` and original DAT folder | Pass as `--manifest` to reconstruction. One row per kept original ID gives its verified pixel hash, chosen name, and relative asset paths. |
+| `kept-maps/dats/map_<id>.dat` and `kept-maps/pngs/map_<id>.png` | Same kept export · byte-for-byte DAT copies and PNGs rendered from them | Keep both folders beside the manifest. Reconstruction uses these PNGs for tiles and can read the DATs for canvas coordinates. |
+| `artwork-review/review.html` and `review-2.html`, … | `reconstruct_artworks.py` · kept manifest and PNGs, scan frames, and optional full canvas index or DAT folder | Open `review.html` first. Each page shows up to 48 layouts. Share the whole output folder. |
+| `artwork-review/previews/<group>.png` | Same reconstruction · placed and rotated tiles | See a composite image of one candidate display. |
+| `artwork-review/layouts.json` | Same reconstruction · kept IDs joined to frame placements and source canvases | Look up tile order, original IDs, rotations, canvas centers, gaps, and observed display locations for each candidate. |
+| `artwork-review/ungrouped.csv` | Same reconstruction · kept manifest compared with candidate layouts | Find kept IDs outside every multi-tile candidate and the reason for each. |

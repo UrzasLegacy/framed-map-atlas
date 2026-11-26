@@ -12,5 +12,7 @@ dist/
 map-dat-metadata.csv
 curated-map-names.csv
 map-review.csv
-/kept-maps
+kept-maps/
 selected-all-dimensions-all-chunks-all-containers/
+artwork-review/
+artwork-review2/
