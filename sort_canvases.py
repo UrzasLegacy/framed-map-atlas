@@ -14,7 +14,7 @@ from urllib.parse import quote
 from zipfile import ZIP_DEFLATED, ZipFile
 
 from curated_names import catalog_names
-from map_assets import index_dats, pixel_signature, read_map_data, render
+from map_assets import footprint, index_dats, pixel_signature, read_map_data, render
 
 
 def load_titles(reports):
@@ -128,14 +128,6 @@ def terrain_pattern(colors):
         return ""
     return (f"{surface:.0%} surface colors. Adjacent pixels share a base color {near/pairs:.0%} "
             f"of the time, versus {far/pairs:.0%} eight pixels apart.")
-
-
-def footprint(data):
-    dimension = data.get("dimension")
-    x, z, scale = data.get("xCenter"), data.get("zCenter"), data.get("scale", 0)
-    if not isinstance(dimension, (str, int)) or not str(dimension) or not all(type(v) is int for v in (x, z, scale)):
-        return None
-    return dimension, x, z, scale
 
 
 def folder_for(fp, count, threshold):
