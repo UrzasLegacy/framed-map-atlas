@@ -8,7 +8,7 @@ import tempfile
 from collections import Counter, defaultdict
 from pathlib import Path
 
-from map_assets import index_dats, load_map_list, pixel_signature, read_pixels
+from map_assets import index_dats, load_kept_ids, pixel_signature, read_pixels
 
 
 def catalog_names(reports):
@@ -87,7 +87,7 @@ def write_catalog(data_dir, curated, names, stream):
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("data", type=Path, help="DAT directory shared by this curated list and all name catalogs")
-    parser.add_argument("--map-list", required=True, type=Path, help="review CSV (Keep rows) or a list of map PNG filenames")
+    parser.add_argument("--review-csv", required=True, type=Path, help="review CSV exported by the gallery; selects IDs marked Keep")
     parser.add_argument("--names-report", required=True, action="append", type=Path,
                         help="map-names.json or report folder from this map-ID namespace; repeat for additional reports")
     parser.add_argument("--out", required=True, type=Path, help="new output CSV")
@@ -95,7 +95,7 @@ def main(argv=None):
     if args.out.exists():
         parser.error(f"choose a new CSV path: {args.out}")
     try:
-        ids = load_map_list(args.map_list)
+        ids = load_kept_ids(args.review_csv)
         names = catalog_names(args.names_report)
         args.out.parent.mkdir(parents=True, exist_ok=True)
         with tempfile.TemporaryDirectory(dir=args.out.parent) as temp:
