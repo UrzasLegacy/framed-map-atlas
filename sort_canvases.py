@@ -328,14 +328,20 @@ for(const s of sites) for(const t of s.tiles){
   for(const id of t.ids){g.ids.push(id);byId.set(id,g)}
 }
 const allTiles = [...globalTiles.values()].sort((a,b)=>a.id-b.id);
+const defaultNames=new Map();
+for(const [key,candidates] of Object.entries(names)){
+  const titles=Object.keys(candidates).filter(Boolean);
+  if(titles.length===1)defaultNames.set(key,titles[0])
+}
+function reviewName(id){return chosenNames.get(id)??defaultNames.get(byId.get(id).key)??""}
 const terrainTiles = allTiles.filter(t=>terrainReasons[t.id]&&!Object.keys(names[t.key]||{}).length);
-function pendingTerrain(){return terrainTiles.filter(t=>!decisions.has(t.id)&&!chosenNames.has(t.id))}
+function pendingTerrain(){return terrainTiles.filter(t=>!decisions.has(t.id)&&!reviewName(t.id))}
 function notice(text){$("notice").textContent=text}
 try {
   const loaded=JSON.parse(localStorage.getItem(storeKey));
   if(loaded){
     for(const [id,v] of loaded.decisions) if(byId.has(id)&&labels.includes(v)) decisions.set(id,v);
-    for(const [id,v] of loaded.names) if(byId.has(id)&&typeof v==="string"&&v) chosenNames.set(id,v)
+    for(const [id,v] of loaded.names) if(byId.has(id)&&typeof v==="string") chosenNames.set(id,v)
   }
 } catch {notice("Could not load the saved review. You can import a review CSV.")}
 function save(){
@@ -416,7 +422,7 @@ function tileCard(t){
     }
     if(["blank","solid"].includes(t.kind)&&entries.some(([,sources])=>!sources.includes(id)))card.append(el("p","note","Many maps can share a single color. Treat pixel matches here as tentative."));
   }
-  const selected=new Set(targets.map(i=>chosenNames.get(i)||""));
+  const selected=new Set(targets.map(reviewName));
   const options=new Set([...entries.map(([name])=>name),...selected]);options.delete("");
   if(options.size){
     const label=el("label","choice","Chosen name");
@@ -426,7 +432,7 @@ function tileCard(t){
     option("","No name selected");
     for(const name of options)option(name,name);
     if(selected.size===1)select.value=[...selected][0];
-    select.onchange=()=>{for(const i of targets)setValue(chosenNames,i,select.value);save();render()};
+    select.onchange=()=>{for(const i of targets)chosenNames.set(i,select.value);save();render()};
     label.append(select);card.append(label)
   }
   const info=el("details");info.append(el("summary","",nf(ids.length)+" map ID"+(ids.length===1?"":"s")+" with these pixels"),el("p","",ids.join(", ")));card.append(info);
@@ -513,11 +519,11 @@ $("lookup").onsubmit=e=>{
 };
 function download(name,content,type){const url=URL.createObjectURL(new Blob([content],{type}));const a=el("a");a.href=url;a.download=name;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),3000)}
 $("export").onclick=()=>{
-  const ids=[...byId.keys()].filter(id=>decisions.has(id)||chosenNames.has(id)).sort((a,b)=>a-b);
+  const ids=[...byId.keys()].filter(id=>decisions.has(id)||chosenNames.has(id)||reviewName(id)).sort((a,b)=>a-b);
   if(!ids.length){notice("Mark a tile or choose a name first.");return}
   const lines=["map_id,pixel_key,decision,chosen_name"];
   for(const id of ids){
-    const title=(chosenNames.get(id)||"").replaceAll('"','""');
+    const title=reviewName(id).replaceAll('"','""');
     lines.push([id,byId.get(id).key,decisions.get(id)||"",'"'+title+'"'].join(","))
   }
   download("map-review.csv",lines.join("\r\n")+"\r\n","text/csv")
@@ -544,7 +550,7 @@ $("file").onchange=async e=>{
   for(const row of rows){
     const [rawId,key,value,title]=row,id=Number(rawId);
     if(row.length!==4||!/^-?\d+$/.test(rawId)||byId.get(id)?.key!==key||
-       (!labels.includes(value)&&!(value===""&&title)))throw Error("A review row does not match this gallery.");
+       (value!==""&&!labels.includes(value)))throw Error("A review row does not match this gallery.");
     const previous=incoming.get(id);
     if(previous&&(previous[0]!==value||previous[1]!==title))throw Error("Conflicting review rows for map "+id+".");
     incoming.set(id,[value,title])
@@ -552,7 +558,8 @@ $("file").onchange=async e=>{
   let added=0,conflicts=0;
   for(const [id,[decision,title]] of incoming){
     for(const [map,value] of [[decisions,decision],[chosenNames,title]]){
-      if(!value)continue;
+      // A blank name suppresses a default. A row with both fields empty records an explicit clear.
+      if(!value && (map===decisions || (decision && !defaultNames.has(byId.get(id).key))))continue;
       if(!map.has(id)){map.set(id,value);added++}else if(map.get(id)!==value)conflicts++
     }
   }
