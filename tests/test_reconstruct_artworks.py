@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from reconstruct_artworks import annotate_canvases, build
+from reconstruct_artworks import annotate_canvases, artist_credit, build
 from test_scanner import tag
 
 try:
@@ -15,6 +15,13 @@ except ImportError:
 
 
 class CanvasTest(unittest.TestCase):
+    def test_artist_credits_in_real_title_formats(self):
+        for name, expected in [("Moon by:Rose & Fox 1-2", "Rose & Fox"), ("Moon 0_1 SZX", "SZX"),
+                               ("Moon - Alex", "Alex"), ("Floral Wallpaper", ""), ("Moon 0-1", ""),
+                               ("1-2 Moon Over Water", ""), ("1-2 -Lou, RLG", "Lou, RLG")]:
+            with self.subTest(name=name):
+                self.assertEqual(artist_credit(name), expected)
+
     def test_canvas_lookup_from_kept_and_excluded_dats(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -84,8 +91,13 @@ class ReconstructionTest(unittest.TestCase):
                 self.assertEqual(composite.getpixel((128,0)), (255,0,0,255))
                 self.assertNotEqual(composite.getpixel((260,20)), composite.getpixel((260,140)))
             html = (out / "review.html").read_text(encoding="utf-8")
-            self.assertIn("Moon &lt;sky&gt;", html)
-            self.assertIn("#99 outside kept manifest<br>minecraft:overworld · X 0 / Z 64 · scale 2", html)
+            payload = html.split('id="data">', 1)[1].split('</script>', 1)[0]
+            self.assertNotIn("<sky>", payload)
+            art, = json.loads(payload)["cards"]
+            self.assertEqual(art["title"], "Moon <sky>")
+            excluded = art["tiles"][2]
+            self.assertEqual(excluded[:5], [1, 3, 99, "", False])
+            self.assertEqual(art["canvases"][excluded[5]][0], "minecraft:overworld · X 0 / Z 64 · scale 2")
             with (out / "ungrouped.csv").open(encoding="utf-8-sig") as f:
                 reasons = {int(r["original_map_id"]): r["reason"] for r in csv.DictReader(f)}
             self.assertEqual(reasons, {7:"observed as a single tile",8:"no frame observation",

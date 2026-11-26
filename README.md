@@ -110,6 +110,14 @@ python reconstruct_artworks.py --manifest "kept-maps\manifest.csv" --frames "map
 
 Open `artwork-review/review.html`. The gallery starts with filled rectangles, then shows partial layouts. Click a composite PNG to inspect it or expand the tile list to see original IDs, chosen names, and each display's location. Gold crosses indicate scanned IDs outside the kept manifest. Gray cells have no tile assigned to that candidate. A full rectangle describes the observed grid; adjoining pieces can still be grouped together, and a missing outer row can make a partial artwork look complete.
 
+### Search and review layouts
+
+The gallery opens on **Unreviewed**. Search the artwork title, chosen tile names, or available observed names. Enter an exact ID such as `#25970`, `25970`, or `map_25970.png` to highlight every matching cell, including repeats and excluded tiles. Artist search looks for possible credits within those names, such as `by Alex & Sam`, `Moon - Alex`, or `Moon 1-2 Alex`. Credits are inferred from naming conventions. Use the general name search for unusual credit formats.
+
+Filters combine across the entire collection. Set width and height independently, choose layouts with or without excluded tiles or gaps, or select a source canvas. Click a canvas on a card to see every layout using that exact dimension, center, and scale across all decisions. **Clear filters** also restores the full collection.
+
+Use **Keep artwork**, **Ignore grouping**, or **Needs investigation** per layout. Choose **Unreviewed** to clear a decision. The review status filter lets you revisit any decision. Decisions are saved locally in this browser, separately from the tile sorter's Keep choices. Use **Export artwork decisions** to share or back them up. **Import artwork decisions** accepts a matching collection, fills missing decisions, and reports conflicts while keeping the local reviewer's choice.
+
 Open **Source canvases** on an artwork to see each map-making canvas's dimension, center X/Z, scale, and placement count. Under **Tiles and displays**, find a gold cross by row and column to see its original map ID and source canvas. To search for a missing piece, filter the original sorter's `map-index.csv` by that dimension, `center_x`, `center_z`, and `scale`. Its `path` column leads to every indexed image made on that canvas. Other tiles' canvases are leads for gray gaps, which have no recorded map ID in the layout.
 
 Use a full `--map-index` from the same save to look up kept and excluded IDs. Alternatively pass `--data-dir "D:\Backup\world\data"` for the original DATs. With neither option the helper reads the DAT paths in the kept manifest. Unavailable coordinates are shown as unknown. In `layouts.json`, each tile carries its `source_canvas` and each layout lists its distinct `source_canvases`; frame coordinates are recorded separately under `displays`.

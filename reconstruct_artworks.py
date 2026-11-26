@@ -2,11 +2,13 @@
 
 import argparse
 import csv
+import hashlib
+import re
+import unicodedata
 import json
 import tempfile
 from collections import Counter
 from functools import lru_cache
-from html import escape
 from pathlib import Path
 
 from artwork import infer, title_key
@@ -97,6 +99,12 @@ def reconstruct(kept, frames):
             layouts[key] = dict(id=g["group"], title=title, width=g["width"], height=g["height"],
                                 kept_placements=kept_count, excluded=len(grid)-kept_count, gaps=g["empty_cells"],
                                 tiles=grid, displays=[])
+        for tile, observation in zip(layouts[key]["tiles"], tiles):
+            name = observation["name"]
+            if name and name != tile["chosen_name"]:
+                aliases = tile.setdefault("observed_names", [])
+                if name not in aliases:
+                    aliases.append(name)
         display = {k: g[k] for k in ("world", "dimension", "facing", "confidence", "review_notes")}
         display["placements"] = [dict(row=t["row"], column=t["column"], **{
             k: frames[t["frame"]][k] for k in ("frame", "x", "y", "z", "rotation")
@@ -205,59 +213,66 @@ def make_previews(layouts, kept, manifest, folder):
         canvas.save(folder / art["preview"])
 
 
-def card(art):
-    title = escape(art["title"] or art["id"])
-    details = []
+# Credit formats found in display titles, e.g. "Dragon by Alex 0-2",
+# "Dragon - Alex" and "Dragon 0-2 Alex & Sam". Preserve joint credits.
+GRID_COORD = r"\d+\s*[-_,]\s*\d+"
+AFTER_COORD = re.compile(GRID_COORD + r"[, _]+([^\d\s].*)$")
+DASH_CREDIT = re.compile(r"\s+[-–—]\s*([^\d\s].*)$")
+TRAILING_COORD = re.compile(r"\s*[(\[]?" + GRID_COORD + r"[)\]]?\s*$")
+
+
+def artist_credit(name):
+    name = unicodedata.normalize("NFKC", name).strip()
+    marked = re.split(r"\bby\s*[:：]\s*|\bartists?\s*[:：]\s*|\bby\s+", name, flags=re.I)
+    if len(marked) > 1:
+        credit = marked[-1]
+    else:
+        match = AFTER_COORD.search(name)
+        if not match or not name[:match.start()].strip(" _-"):
+            match = DASH_CREDIT.search(name)
+        if not match:
+            return ""
+        credit = match[1]
+    credit = TRAILING_COORD.sub("", credit).strip(" -–—")
+    return credit if any(c.isalpha() for c in credit) else ""
+
+
+def gallery_card(art):
+    tiles, names, signature = [], set(), []
+    canvases = art["source_canvases"]
+    canvas_ids = {canvas_label(c): i for i, c in enumerate(canvases)}
+    for t in art["tiles"]:
+        aliases = t.get("observed_names", [])
+        names.update([t["chosen_name"], *aliases])
+        canvas = canvas_ids[canvas_label(t["source_canvas"])] if t["source_canvas"] else None
+        tiles.append([t["row"], t["column"], t["original_map_id"], t["chosen_name"], t["kept"], canvas, aliases])
+        signature.append([t["row"], t["column"], t["original_map_id"], t["clockwise_quarters"],
+                          t["rotation_unknown"], t["kept"], t["pixel_key"]])
+    # Scan-local G numbers can change. Use the actual placement data to identify a decision.
+    key = hashlib.sha256(json.dumps(signature, separators=(",", ":")).encode()).hexdigest()
+    displays, notes = [], set()
     for d in art["displays"]:
         p = d["placements"][0]
-        where = f"{d['world']} / {d['dimension']} · {p['x']}, {p['y']}, {p['z']} · {d['facing']}"
-        details.append(f"<li>{escape(where)} · {escape(d['confidence'])}</li>")
-    notes = sorted({n for d in art["displays"] for n in d["review_notes"]})
+        displays.append(f"{d['world']} / {d['dimension']} · {p['x']}, {p['y']}, {p['z']} · {d['facing']} · {d['confidence']}")
+        notes.update(d["review_notes"])
     if any(t["rotation_unknown"] for t in art["tiles"]):
-        notes.append("A missing rotation was previewed at its default angle.")
-    tiles = []
-    for t in art["tiles"]:
-        text = t["chosen_name"] if t["kept"] else "outside kept manifest"
-        canvas = canvas_label(t["source_canvas"]) if t["source_canvas"] else "Canvas unknown"
-        tiles.append(f"<li>R{t['row']} C{t['column']} · #{t['original_map_id']} {escape(text)}<br>{escape(canvas)}</li>")
-    canvases = art["source_canvases"]
-    canvas_rows = [f"<li>{escape(canvas_label(c))} · {c['placements']} placements ({c['excluded']} excluded)</li>"
-                   for c in canvases]
-    unknown = sum(t["source_canvas"] is None for t in art["tiles"])
-    if unknown:
-        canvas_rows.append(f"<li>Canvas unknown for {unknown} placements</li>")
-    summary = "Source canvas · " + canvas_label(canvases[0]) if len(canvases) == 1 else f"Source canvases ({len(canvases)} known)"
-    return (f'<article><a href="{art["preview"]}"><img loading="lazy" alt="Preview of {title}" src="{art["preview"]}"></a>'
-            f'<h2>{title}</h2><p>{art["id"]} · {art["width"]} × {art["height"]} · {art["kept_placements"]} kept'
-            f' · {art["excluded"]} excluded · {art["gaps"]} gaps</p>'
-            f'<details><summary>{escape(summary)}</summary><ul>{"".join(canvas_rows)}</ul></details>'
-            f'<details><summary>Tiles and displays ({len(art["displays"])})</summary><h3>Frame locations</h3><ul>{"".join(details)}</ul>'
-            f'<p>{escape(" ".join(notes))}</p><ol>{"".join(tiles)}</ol></details></article>')
+        notes.add("A missing rotation was previewed at its default angle.")
+    names.add(art["title"])
+    artists = sorted({credit for n in names if (credit := artist_credit(n))}, key=lambda s: (s.casefold(), s))
+    return dict(key=key, id=art["id"], title=art["title"], width=art["width"], height=art["height"],
+                excluded=art["excluded"], gaps=art["gaps"], kept=art["kept_placements"], preview=art["preview"],
+                artists=artists, tiles=tiles, displays=displays, notes=sorted(notes),
+                canvases=[[canvas_label(c), c["placements"], c["excluded"]] for c in canvases])
 
 
 def gallery(layouts, unmatched, folder):
     ranked = sorted(layouts, key=lambda a: (bool(a["excluded"] or a["gaps"]), -len(a["displays"]), a["id"]))
-    pages = max(1, (len(ranked)+47)//48)
-    def filename(page):
-        return "review.html" if page == 1 else f"review-{page}.html"
-    for page in range(1, pages+1):
-        links = [f'<a href="{filename(n)}">{label}</a>' for n, label in
-                 ((1, "First"), (page-1, "Previous"), (page+1, "Next"), (pages, "Last")) if 1 <= n <= pages and n != page]
-        nav = f'<nav>Page {page} of {pages} &nbsp; {" · ".join(links)}</nav>'
-        cards = "".join(card(a) for a in ranked[(page-1)*48:page*48])
-        html = f"""<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width">
-<title>Map artwork review</title><style>
-:root{{color-scheme:light dark;font:16px system-ui}}body{{max-width:96rem;margin:auto;padding:1rem}}
-main{{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,18rem),1fr));gap:1rem;align-items:start}}
-article{{padding:.8rem;border:1px solid #8888;border-radius:.5rem;overflow-wrap:anywhere}}
-img{{display:block;width:100%;height:13rem;object-fit:contain;image-rendering:pixelated;background:#8882}}
-h2{{font-size:1.1rem}}p,li{{line-height:1.4}}nav{{margin:1rem 0}}summary{{cursor:pointer}}</style>
-<h1>Map artwork review</h1><p>{len(ranked):,} candidate layouts · <a href="ungrouped.csv">{len(unmatched):,} kept IDs outside these layouts</a></p>
-<p>Gold crosses mark observed maps outside the kept manifest. Gray marks grid cells without a tile in the candidate.
-Expand the source canvases to find the DAT centers used by this artwork. Tiles and displays lists the original ID
-and canvas for each observed tile. A gray gap has no observed ID to look up.</p>
-{nav}<main>{cards or "<p>No multi-tile candidates were found in this scan.</p>"}</main>{nav}</html>"""
-        (folder / filename(page)).write_text(html, encoding="utf-8")
+    cards = [gallery_card(a) for a in ranked]
+    collection = hashlib.sha256("".join(sorted(a["key"] for a in cards)).encode()).hexdigest()
+    payload = json.dumps(dict(collection=collection, cards=cards, ungrouped=len(unmatched)),
+                         ensure_ascii=True, separators=(",", ":")).replace("<", "\\u003c")
+    template = Path(__file__).with_name("artwork_review.html").read_text(encoding="utf-8")
+    (folder / "review.html").write_text(template.replace("__ARTWORK_DATA__", payload), encoding="utf-8")
 
 
 def build(manifest, frames_csv, out, world=None, map_index=None, data_dir=None):
