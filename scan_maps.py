@@ -17,7 +17,7 @@ from pathlib import Path
 
 from anvil import discover, location, region_chunks
 from artwork import infer
-from map_assets import export_maps, load_map_list, selection_summary
+from map_assets import export_maps, load_kept_ids, selection_summary
 
 
 FRAMES = {"minecraft:item_frame", "minecraft:glow_item_frame", "item_frame", "glow_item_frame", "ItemFrame"}
@@ -391,7 +391,7 @@ def main(argv=None):
     parser.add_argument("--out", type=Path, help="new report folder (default: timestamped folder in current directory)")
     parser.add_argument("--export-maps", choices=("png", "dat", "both"),
                         help="export the recovered map IDs as PNG images, original .dat files, or both")
-    parser.add_argument("--map-list", type=Path, help="review CSV (Keep rows) or a list of map PNG filenames")
+    parser.add_argument("--review-csv", type=Path, help="review CSV exported by the gallery; selects IDs marked Keep")
     parser.add_argument("--from-report", type=Path, help="use an existing map-names.json or report folder; skip region scanning")
     parser.add_argument("--map-source", action="append", nargs=2, default=[], metavar=("WORLD", "FOLDER"),
                         help="use this map data directory for a report world key (repeatable)")
@@ -410,7 +410,7 @@ def main(argv=None):
         parser.error(f"report destination already exists: {out}. Choose a new folder.")
     stats = asset_counts = None
     try:
-        map_ids = load_map_list(args.map_list) if args.map_list is not None else None
+        map_ids = load_kept_ids(args.review_csv) if args.review_csv is not None else None
         out.parent.mkdir(parents=True, exist_ok=True)
         with tempfile.TemporaryDirectory(dir=out.parent) as temp:
             staging = Path(temp) / "report"
