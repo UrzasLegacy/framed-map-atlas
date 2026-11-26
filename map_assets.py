@@ -130,6 +130,14 @@ def read_pixels(source):
     return read_map_data(source)["colors"]
 
 
+def footprint(data):
+    dimension = data.get("dimension")
+    x, z, scale = data.get("xCenter"), data.get("zCenter"), data.get("scale", 0)
+    if not isinstance(dimension, (str, int)) or not str(dimension) or not all(type(v) is int for v in (x, z, scale)):
+        return None
+    return dimension, x, z, scale
+
+
 def render(source):
     return render_pixels(read_pixels(source))
 
