@@ -1,6 +1,7 @@
 """Build a portable gallery of candidate displays from frames.csv and a kept-maps export."""
 
 import argparse
+import base64
 import csv
 import hashlib
 import re
@@ -12,7 +13,7 @@ from functools import lru_cache
 from pathlib import Path
 
 from artwork import infer, title_key
-from map_assets import footprint, index_dats, read_map_nbt
+from map_assets import footprint, index_dats, pixel_signature, read_map_nbt, read_pixels, render_pixels
 
 
 def csv_rows(path, required):
@@ -255,7 +256,8 @@ def gallery_card(art):
         aliases = t.get("observed_names", [])
         names.update([t["chosen_name"], *aliases])
         canvas = canvas_ids[canvas_label(t["source_canvas"])] if t.get("source_canvas") else None
-        tiles.append([t["row"], t["column"], t["original_map_id"], t["chosen_name"], t["kept"], canvas, aliases])
+        tiles.append([t["row"], t["column"], t["original_map_id"], t["chosen_name"], t["kept"], canvas, aliases,
+                      t["clockwise_quarters"]])
     displays, notes = [], set()
     for d in art["displays"]:
         p = d["placements"][0]
@@ -271,23 +273,49 @@ def gallery_card(art):
                 canvases=[[canvas_label(c), c["placements"], c["excluded"]] for c in canvases])
 
 
-def gallery(layouts, unmatched, folder):
+def recovery_previews(layouts, data_dir, map_index):
+    wanted = {t["original_map_id"] for a in layouts for t in a["tiles"] if not t["kept"]}
+    previews = {}
+    if data_dir is not None:
+        dats = index_dats(data_dir)
+        for i in sorted(wanted):
+            paths = dats.get(i, [])
+            if len(paths) == 1:
+                try:
+                    pixels = read_pixels(paths[0])
+                except (OSError, ValueError):
+                    continue
+                previews[i] = [pixel_signature(pixels)[0], base64.b64encode(render_pixels(pixels)).decode("ascii")]
+    elif map_index is not None:
+        root = map_index.parent.resolve()
+        for row in csv_rows(map_index, ("map_id",)):
+            i = int(row["map_id"])
+            if i not in wanted or not row.get("path") or not re.fullmatch("[0-9a-f]{64}", row.get("pixel_sha256") or ""):
+                continue
+            image = (root / row["path"]).resolve()
+            if image.is_relative_to(root) and image.is_file() and image.suffix.lower() == ".png":
+                previews[i] = [row["pixel_sha256"], base64.b64encode(image.read_bytes()).decode("ascii")]
+    return previews
+
+
+def gallery(layouts, unmatched, folder, data_dir=None, map_index=None):
     ranked = sorted(layouts, key=lambda a: (bool(a["excluded"] or a["gaps"]), -len(a["displays"]), a["id"]))
     cards = [gallery_card(a) for a in ranked]
     collection = collection_key(a["key"] for a in cards)
-    payload = json.dumps(dict(collection=collection, cards=cards, ungrouped=len(unmatched)),
+    recovery = recovery_previews(layouts, data_dir, map_index)
+    payload = json.dumps(dict(collection=collection, cards=cards, ungrouped=len(unmatched), recovery=recovery),
                          ensure_ascii=True, separators=(",", ":")).replace("<", "\\u003c")
     template = Path(__file__).with_name("artwork_review.html").read_text(encoding="utf-8")
     (folder / "review.html").write_text(template.replace("__ARTWORK_DATA__", payload), encoding="utf-8")
 
 
-def refresh_gallery(folder):
+def refresh_gallery(folder, data_dir=None, map_index=None):
     with (folder / "layouts.json").open(encoding="utf-8") as stream:
         layouts = json.load(stream)["layouts"]
     unmatched = list(csv_rows(folder / "ungrouped.csv", ("original_map_id",)))
     with tempfile.TemporaryDirectory(dir=folder, prefix=".review-") as tmp:
         stage = Path(tmp)
-        gallery(layouts, unmatched, stage)
+        gallery(layouts, unmatched, stage, data_dir, map_index)
         (stage / "review.html").replace(folder / "review.html")
 
 
@@ -310,7 +338,7 @@ def build(manifest, frames_csv, out, world=None, map_index=None, data_dir=None):
             writer.writerow(("original_map_id", "chosen_name", "pixel_key", "reason"))
             for i, reason in unmatched.items():
                 writer.writerow((i, kept[i]["chosen_name"], kept[i]["pixel_key"], reason))
-        gallery(layouts, unmatched, stage)
+        gallery(layouts, unmatched, stage, data_dir, map_index)
         stage.rename(out)
     return len(layouts), sum(len(a["displays"]) for a in layouts), len(unmatched)
 
@@ -329,9 +357,9 @@ def main():
     args = parser.parse_args()
     try:
         if args.refresh_gallery is not None:
-            if any((args.frames, args.out, args.world, args.map_index, args.data_dir)):
-                parser.error("use --refresh-gallery by itself")
-            refresh_gallery(args.refresh_gallery)
+            if any((args.frames, args.out, args.world)):
+                parser.error("--refresh-gallery accepts only --data-dir or --map-index as an additional input")
+            refresh_gallery(args.refresh_gallery, args.data_dir, args.map_index)
             print(args.refresh_gallery / "review.html")
             return
         if not args.frames or not args.out:
