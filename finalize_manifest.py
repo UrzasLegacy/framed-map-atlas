@@ -34,7 +34,8 @@ def reviewed_changes(gallery, review, manifest_keys):
     with review.open(encoding="utf-8-sig") as stream:
         data = json.load(stream)
     if not isinstance(data, dict) or data.get("format") not in (
-        "framed-map-atlas/artwork-review-v1", "framed-map-atlas/artwork-review-v2", "framed-map-atlas/artwork-review-v3"
+        "framed-map-atlas/artwork-review-v1", "framed-map-atlas/artwork-review-v2",
+        "framed-map-atlas/artwork-review-v3", "framed-map-atlas/artwork-review-v4"
     ) or not isinstance(data.get("decisions"), list):
         raise ValueError("Expected an exported artwork-decisions.json file.")
     if data.get("collection") != collection_key(kept_by_layout):
@@ -55,7 +56,7 @@ def reviewed_changes(gallery, review, manifest_keys):
         elif row["decision"] not in ("Keep artwork", "Ignore grouping", "Needs investigation") or "remove_ids" in row:
             raise ValueError(f"Invalid decision for layout {key}.")
     recovered = {}
-    entries = data["recover_tiles"] if data["format"].endswith("-v3") else []
+    entries = data["recover_tiles"] if data["format"].endswith(("-v3","-v4")) else []
     if not isinstance(entries, list):
         raise ValueError("Expected a list of recovery IDs.")
     for entry in entries:
