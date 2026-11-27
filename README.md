@@ -110,6 +110,12 @@ python reconstruct_artworks.py --manifest "kept-maps\manifest.csv" --frames "map
 
 Open `artwork-review/review.html`. The gallery starts with filled rectangles, then shows partial layouts. Click a composite PNG to inspect it or expand the tile list to see original IDs, chosen names, and each display's location. Gold crosses indicate scanned IDs outside the kept manifest. Gray cells have no tile assigned to that candidate. A full rectangle describes the observed grid; adjoining pieces can still be grouped together, and a missing outer row can make a partial artwork look complete.
 
+To update the review controls in an existing gallery, run the following from the extracted source folder. The generator reads `layouts.json` and `ungrouped.csv` and writes the new `review.html` beside them. Keep `artwork_review.html` beside `reconstruct_artworks.py` in the source folder; it supplies the template for both new and refreshed galleries.
+
+```powershell
+python reconstruct_artworks.py --refresh-gallery "artwork-review"
+```
+
 ### Search and review layouts
 
 The gallery opens on **Unreviewed**. Search the artwork title, chosen tile names, or available observed names. Enter an exact ID such as `#25970`, `25970`, or `map_25970.png` to highlight every matching cell, including repeats and excluded tiles. Artist search looks for possible credits within those names, such as `by Alex & Sam`, `Moon - Alex`, or `Moon 1-2 Alex`. Credits are inferred from naming conventions. Use the general name search for unusual credit formats.
@@ -117,6 +123,19 @@ The gallery opens on **Unreviewed**. Search the artwork title, chosen tile names
 Filters combine across the entire collection. Set width and height independently, choose layouts with or without excluded tiles or gaps, or select a source canvas. Click a canvas on a card to see every layout using that exact dimension, center, and scale across all decisions. **Clear filters** also restores the full collection.
 
 Use **Keep artwork**, **Ignore grouping**, or **Needs investigation** per layout. Choose **Unreviewed** to clear a decision. The review status filter lets you revisit any decision. Decisions are saved locally in this browser, separately from the tile sorter's Keep choices. Use **Export artwork decisions** to share or back them up. **Import artwork decisions** accepts a matching collection, fills missing decisions, and reports conflicts while keeping the local reviewer's choice.
+
+**Mark tiles for removal** opens a checklist of distinct kept IDs on the layout. On first opening, only IDs appearing in this layout alone in the current gallery are checked. Shared IDs start unchecked. Expand a shared ID to open its other layouts in separate tabs and see each decision. Untick any tile worth keeping individually. **Cancel** discards the draft. Apply the selection to move the layout into the **Remove tiles** queue. **Edit removal** reopens the saved checklist. Changing the layout to another decision withdraws its removal requests. If two layouts marked the same ID, withdraw both requests to restore it. An explicit shared-ID selection also affects a layout marked **Keep artwork**.
+
+### Generate the final migration manifest
+
+Export the final combined decisions from the reviewed gallery, then run:
+
+```powershell
+python finalize_manifest.py --manifest "kept-maps/manifest.csv" --gallery "artwork-review" --decisions "artwork-decisions.json" --out "kept-maps/migration-manifest.csv"
+```
+
+The helper verifies the gallery collection and the original kept IDs and pixel hashes. It writes a new CSV with the original columns, chosen names, and asset references. Only explicitly selected numeric IDs are omitted. Pixel-identical copies with different IDs and kept maps outside all groupings remain eligible. Your original manifest, DATs, and PNGs stay available. Use the same gallery that produced the decisions file. Sharing checks cover the layouts observed in that gallery.
+
 
 Open **Source canvases** on an artwork to see each map-making canvas's dimension, center X/Z, scale, and placement count. Under **Tiles and displays**, find a gold cross by row and column to see its original map ID and source canvas. To search for a missing piece, filter the original sorter's `map-index.csv` by that dimension, `center_x`, `center_z`, and `scale`. Its `path` column leads to every indexed image made on that canvas. Other tiles' canvases are leads for gray gaps, which have no recorded map ID in the layout.
 
