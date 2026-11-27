@@ -53,7 +53,14 @@
   function toggle(key,checked) {
     checked?selected.add(key):selected.delete(key);
     try {localStorage.setItem(storageKey,JSON.stringify([...selected]));} catch {}
-    sync();
+    if(mode!=="selected") {sync();return;}
+    const checks=[...$("grid").querySelectorAll("input[data-pick]")];
+    const focusIndex=checks.indexOf(document.activeElement);
+    render();
+    if(focusIndex>=0) {
+      const remaining=$("grid").querySelectorAll("input[data-pick]");
+      (remaining[Math.min(focusIndex,remaining.length-1)] || $("selectedView")).focus();
+    }
   }
   function sync() {
     $("count").textContent=number(selected.size);
@@ -68,6 +75,10 @@
   }
   const searchText=new Map(cards.map(c=>[c.key,[c.title,c.originalTitle,...(c.groups||[]),...c.tiles.map(t=>t.name)].join(" ").toLocaleLowerCase()]));
   function filter() {
+    const inSelection=mode==="selected";
+    $("search").hidden=$("overlapLabel").hidden=inSelection;
+    page=0;
+    if(inSelection) {render();return;}
     const q=$("search").value.trim().toLocaleLowerCase(), numeric=/^#?(-?\d+)$/.exec(q);
     const id=numeric?Number(numeric[1]):null, oldImage=originals.get(id);
     filtered=cards.filter(c=>{
@@ -75,10 +86,13 @@
       if(!q || searchText.get(c.key).includes(q)) return true;
       return numeric && c.tiles.some(t=>t.id===id || t.id===oldImage);
     });
-    page=0;render();
+    render();
   }
   function render() {
+    // Picks includes tiles selected inside a mural, even without a standalone catalog card.
+    if(mode==="selected") filtered=picks();
     const frag=document.createDocumentFragment(), pages=Math.ceil(filtered.length/pageSize);
+    page=Math.min(page,Math.max(0,pages-1));
     for(const c of filtered.slice(page*pageSize,(page+1)*pageSize)) {
       const article=node("article",null,"card"), open=node("button"), mat=node("span",null,"mat");
       mat.append(thumb(c.image));open.onclick=()=>detail(c);
@@ -87,7 +101,11 @@
       article.append(open,check(c,null,"tick"));frag.append(article);
     }
     $("grid").replaceChildren(frag);
-    $("results").textContent=number(filtered.length)+" works"+(!filtered.length?" · Try another search or filter.":"");
+    if(mode==="selected") {
+      $("results").textContent=filtered.length ? number(filtered.length)+" selected" : "No cards selected. Check a card in the collection to add it here.";
+    } else {
+      $("results").textContent=number(filtered.length)+" works"+(!filtered.length?" · Try another search or filter.":"");
+    }
     $("page").textContent=pages?"Page "+(page+1)+" of "+pages:"";
     $("prev").disabled=!page;$("next").disabled=page+1>=pages;sync();
   }
