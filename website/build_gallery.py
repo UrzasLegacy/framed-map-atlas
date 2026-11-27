@@ -55,9 +55,11 @@ def generate(manifest, layouts, folder):
     with manifest.open(encoding="utf-8-sig", newline="") as f:
         for row in csv.DictReader(f, strict=True):
             i, d = int(row["original_map_id"]), int(row["destination_map_id"])
+            if d < 100_000:
+                raise ValueError(f"Map {i} uses destination ID {d}. Re-finalize with IDs starting at 100,000 before building this gallery.")
             value = (d, row["chosen_name"])
             paths = (row["pixel_key"], manifest.parent / row["png_path"], manifest.parent / row["dat_path"])
-            if i in originals or not 0 <= d <= 2147483647 or assets.setdefault(d, paths) != paths:
+            if i in originals or d > 2147483647 or assets.setdefault(d, paths) != paths:
                 raise ValueError(f"Inconsistent manifest entry at original ID {i}")
             originals[i] = value
             aliases[value].append(i)
