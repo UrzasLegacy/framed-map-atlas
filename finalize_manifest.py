@@ -129,40 +129,38 @@ def locked_dat(source):
     raise ValueError(f"{source}: missing map data compound")
 
 
-FIRST_GALLERY_ID = 100_000
+GALLERY_ID_OFFSET = 100_000
+MAX_MAP_ID = 2**31 - 1
 
 
-def allocate_ids(pixel_keys, previous, destination_data):
+def allocate_ids(originals_by_pixel, previous, destination_data):
     assignments = {}
     reserved = set()
     if previous:
-        for row in csv_rows(previous, ("pixel_key", "destination_map_id")):
+        for row in csv_rows(previous, ("pixel_key", "destination_map_id", "id_source_original_map_id")):
             key, dest = row["pixel_key"], int(row["destination_map_id"])
-            if dest < FIRST_GALLERY_ID:
-                raise ValueError(f"Previous mapping contains ID {dest} below 100,000. "
-                                 "For the first high-ID export, omit --previous-mapping and choose a fresh output.")
-            if (not re.fullmatch("[0-9a-f]{64}", key) or dest > 2**31-1
+            if (not re.fullmatch("[0-9a-f]{64}", key) or not GALLERY_ID_OFFSET <= dest <= MAX_MAP_ID
+                    or dest != GALLERY_ID_OFFSET + int(row["id_source_original_map_id"])
                     or dest in reserved or key in assignments):
                 raise ValueError(f"Invalid or duplicate assignment in {previous}: {key}, {dest}")
             assignments[key] = dest
             reserved.add(dest)
-    if destination_data:
-        occupied = index_dats(destination_data)
-        for key in pixel_keys & assignments.keys():
-            dest = assignments[key]
-            if dest in occupied:
-                paths = occupied[dest]
-                if len(paths) != 1 or pixel_signature(read_map_data(paths[0])["colors"])[0] != key:
-                    raise ValueError(f"Previous destination ID {dest} conflicts with the destination world")
-        reserved.update(occupied)
-    dest = FIRST_GALLERY_ID
-    for key in sorted(pixel_keys - assignments.keys()):
-        while dest in reserved:
-            dest += 1
-        if dest > 2**31-1:
-            raise ValueError("No destination map IDs remain")
-        assignments[key] = dest
-        dest += 1
+    occupied = index_dats(destination_data) if destination_data else {}
+    for key, originals in originals_by_pixel.items():
+        if key not in assignments:
+            source = min((i for i in originals if 0 <= i <= MAX_MAP_ID - GALLERY_ID_OFFSET), default=None)
+            if source is None:
+                raise ValueError(f"No original ID for image {key} fits the gallery offset: {sorted(originals)}")
+            dest = GALLERY_ID_OFFSET + source
+            if dest in reserved:
+                raise ValueError(f"Offset destination ID {dest} for original {source} is reserved for another image")
+            assignments[key] = dest
+            reserved.add(dest)
+        dest = assignments[key]
+        if dest in occupied:
+            paths = occupied[dest]
+            if len(paths) != 1 or pixel_signature(read_map_data(paths[0])["colors"])[0] != key:
+                raise ValueError(f"Offset destination ID {dest} conflicts with the destination world")
     return assignments
 
 
@@ -223,22 +221,25 @@ def finalize(manifest, gallery, decisions, out, data_dir=None, review_csv=None, 
                 for r in rows if int(r["original_map_id"]) not in removed]
     eligible.extend(recover_rows(recovered, names, data_dir, review_csv))
     reps = {}
+    originals_by_pixel = defaultdict(list)
     for row in eligible:
         data = read_map_data(row["source"])
         key = pixel_signature(data["colors"])[0]
         if row["pixel_key"] is not None and key != row["pixel_key"]:
             raise ValueError(f"Map {row['original_map_id']}: original DAT pixels differ from the review")
         row["pixel_key"] = key
+        originals_by_pixel[key].append(row["original_map_id"])
         choice = (not data.get("locked"), row["original_map_id"], row["source"])
         if key not in reps or choice < reps[key]:
             reps[key] = choice
-    assignments = allocate_ids(reps.keys(), previous, destination_data)
+    assignments = allocate_ids(originals_by_pixel, previous, destination_data)
     by_id = {}
     for row in sorted(eligible, key=lambda r: r["original_map_id"]):
         key, i = row["pixel_key"], row["original_map_id"]
         dest = assignments[key]
         by_id[i] = dict(original_map_id=i, chosen_name=row["chosen_name"], pixel_key=key,
-                        destination_map_id=dest, representative_original_map_id=reps[key][1],
+                        destination_map_id=dest, id_source_original_map_id=dest-GALLERY_ID_OFFSET,
+                        representative_original_map_id=reps[key][1],
                         dat_path=f"{assets.name}/dats/map_{dest}.dat", png_path=f"{assets.name}/pngs/map_{dest}.png")
     artworks = box_artworks(layouts, review, by_id)
     out.parent.mkdir(parents=True, exist_ok=True)
@@ -254,12 +255,13 @@ def finalize(manifest, gallery, decisions, out, data_dir=None, review_csv=None, 
             if data.get("locked") != 1 or pixel_signature(data["colors"])[0] != key:
                 raise ValueError(f"Destination map {dest} failed lock or pixel verification")
             (stage / "pngs" / f"map_{dest}.png").write_bytes(render_pixels(data["colors"]))
-        write_csv(stage / "pixel-ids.csv", ("pixel_key", "destination_map_id"),
-                  (dict(pixel_key=k, destination_map_id=v) for k, v in sorted(assignments.items(), key=lambda p: p[1])))
+        write_csv(stage / "pixel-ids.csv", ("pixel_key", "destination_map_id", "id_source_original_map_id"),
+                  (dict(pixel_key=k, destination_map_id=v, id_source_original_map_id=v-GALLERY_ID_OFFSET)
+                   for k, v in sorted(assignments.items(), key=lambda p: p[1])))
         (stage / "artworks.json").write_text(json.dumps(dict(format="framed-map-atlas/box-artworks-v1",
             artworks=artworks), ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
         staged_manifest = Path(scratch) / "manifest.csv"
-        write_csv(staged_manifest, (*fields, "destination_map_id", "representative_original_map_id"), by_id.values())
+        write_csv(staged_manifest, (*fields, "destination_map_id", "id_source_original_map_id", "representative_original_map_id"), by_id.values())
         out.touch(exist_ok=False)
         try:
             stage.rename(assets)
@@ -283,7 +285,7 @@ def main():
     parser.add_argument("--data-dir", type=Path, help="Original map DAT directory for recoveries")
     parser.add_argument("--review-csv", type=Path, help="Sorter CSV for recovered names and pixel keys")
     parser.add_argument("--previous-mapping", type=Path, help="Preserve assignments from a previous pixel-ids.csv")
-    parser.add_argument("--destination-data", type=Path, help="Skip occupied IDs in the destination map DAT directory")
+    parser.add_argument("--destination-data", type=Path, help="Check fixed offset IDs for conflicting pixels in the destination map DAT directory")
     args = parser.parse_args()
     try:
         originals, images, arts, placements = finalize(args.manifest, args.gallery, args.decisions, args.out,
