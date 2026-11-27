@@ -1,6 +1,6 @@
 # Install gallery maps in Minecraft Java 26.3
 
-**Gallery IDs start at 100,000.** A file named `100000.dat` supplies map #100000. Use the same gallery command on any world where you installed those DATs.
+**Gallery IDs use 100,000 + original map ID.** Original #25 becomes `100025.dat` when #25 is the numbering ID for that image. Pixel-identical copies share one destination ID. Use the same gallery command on any world where you installed those DATs.
 
 1. Extract the ZIP. Save and close the world or stop the server.
 2. Copy the numbered files from `dats/` into the world's shared `data/minecraft/maps/` directory, keeping their filenames. Skip files already installed. If a filename is already taken by a different DAT, stop before overwriting it. The optional checker below can compare the files for you.

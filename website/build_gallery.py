@@ -53,10 +53,13 @@ def tile_title(title, tiles, group):
 def generate(manifest, layouts, folder):
     originals, assets, aliases = {}, {}, defaultdict(list)
     with manifest.open(encoding="utf-8-sig", newline="") as f:
-        for row in csv.DictReader(f, strict=True):
+        reader = csv.DictReader(f, strict=True)
+        if "id_source_original_map_id" not in (reader.fieldnames or ()):
+            raise ValueError("Re-finalize with original-ID offset mapping before building this gallery.")
+        for row in reader:
             i, d = int(row["original_map_id"]), int(row["destination_map_id"])
-            if d < 100_000:
-                raise ValueError(f"Map {i} uses destination ID {d}. Re-finalize with IDs starting at 100,000 before building this gallery.")
+            if d < 100_000 or d != 100_000 + int(row["id_source_original_map_id"]):
+                raise ValueError(f"Map {i} uses destination ID {d}. Re-finalize with the original-ID offset before building this gallery.")
             value = (d, row["chosen_name"])
             paths = (row["pixel_key"], manifest.parent / row["png_path"], manifest.parent / row["dat_path"])
             if i in originals or d > 2147483647 or assets.setdefault(d, paths) != paths:

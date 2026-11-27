@@ -14,13 +14,13 @@ class WebsiteBuildTest(unittest.TestCase):
             root = Path(scratch)
             assets = root / "review-1-assets"
             assets.mkdir()
-            Image.new("RGB", (128, 128), "green").save(assets / "100000.png")
-            (assets / "100000.dat").write_bytes(b"fixture bytes")
+            Image.new("RGB", (128, 128), "green").save(assets / "100042.png")
+            (assets / "100042.dat").write_bytes(b"fixture bytes")
             manifest = root / "review-1.csv"
             with manifest.open("w", encoding="utf-8-sig", newline="") as stream:
                 writer = csv.writer(stream)
-                writer.writerow(("original_map_id", "destination_map_id", "pixel_key", "chosen_name", "dat_path", "png_path"))
-                writer.writerow((42, 100000, "image", "Fern", "review-1-assets/100000.dat", "review-1-assets/100000.png"))
+                writer.writerow(("original_map_id", "destination_map_id", "id_source_original_map_id", "pixel_key", "chosen_name", "dat_path", "png_path"))
+                writer.writerow((42, 100042, 42, "image", "Fern", "review-1-assets/100042.dat", "review-1-assets/100042.png"))
             layouts = assets / "artworks.json"
             layouts.write_text(json.dumps({"format": "framed-map-atlas/box-artworks-v1", "artworks": []}))
             self.assertEqual(migration_inputs(root), (manifest, layouts))
@@ -29,7 +29,7 @@ class WebsiteBuildTest(unittest.TestCase):
             self.assertTrue(all((out / name).is_file() for name in (*SITE_FILES, ".nojekyll")))
             self.assertIn("Fern", (out / "collection/catalog.js").read_text(encoding="utf-8"))
             self.assertEqual((out / "collection/maps/0.bin").read_bytes(), b"fixture bytes")
-            self.assertTrue((out / "collection/images/100000.png").is_file())
+            self.assertTrue((out / "collection/images/100042.png").is_file())
             with self.assertRaisesRegex(ValueError, "fresh"):
                 build(manifest, layouts, out, site=True)
             (root / "another.csv").touch()
