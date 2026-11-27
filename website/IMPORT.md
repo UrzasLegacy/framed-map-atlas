@@ -1,18 +1,19 @@
-# Import selected map art into Minecraft Java 26.3
+# Install gallery maps in Minecraft Java 26.3
 
-Extract the entire selection ZIP. Install Node.js 20 or newer. The importer runs locally and requires no npm packages.
+**Gallery IDs start at 100,000.** A file named `100000.dat` supplies map #100000. Use the same gallery command on any world where you installed those DATs.
 
-1. In the destination world, create and use a vanilla map at least once so Minecraft saves its map counter. Save and stop the server or close the single-player world. Back up the world. Keep it closed until copying is complete.
-2. From the extracted download, run the following, supplying the **existing shared map directory** containing `last_id.dat`, a fresh staging folder, and the recipient’s Java username.
+1. Extract the ZIP. Save and close the world or stop the server.
+2. Copy the numbered files from `dats/` into the world's shared `data/minecraft/maps/` directory, keeping their filenames. Skip files already installed. If a filename is already taken by a different DAT, stop before overwriting it. The optional checker below can compare the files for you.
+3. Start the world. Enter the recipient's username on the gallery and run the selected box commands in the server console.
 
-   ```powershell
-   node import-world.cjs "D:/MyWorld/data/minecraft/maps" "D:/MapImport-01" PlayerName
-   ```
+Leave `last_id.dat` as it is. A world whose last issued map ID is 500 will issue 501 next, even after installing #100000. Vanilla can reuse the imported ID and overwrite its art if the normal map counter eventually reaches it.
 
-3. Review `mapping.json` and `commands.txt` in the staging folder. Copy **the contents of its maps folder** into that same destination map directory. Include the updated `last_id.dat` and `wubcraft-gallery-ids.json`. Keep the world’s existing numeric DATs. If a newly staged numeric DAT would overwrite an existing file, stop and regenerate from the current world in a new staging folder.
-4. Start the world. Run each line of `commands.txt` in the server console while the named player is online. For a local world use an operator command block or a function with the appropriate command-length allowance. Large commands can exceed chat or host-console limits.
+## Optional checksum and collision check
 
-The importer allocates above the highest numeric filename and the world’s saved last ID. Later downloads reuse previously imported DATs whose bytes still match the ledger. If Minecraft has rewritten a DAT, the importer assigns a fresh ID and preserves the existing file. Stage and apply one selection at a time. The exporter includes each requested DAT once and preserves every named bundle and tile placement in the selection.
+With Node.js 20 or newer, run this from the extracted ZIP using the destination's existing map directory and a fresh output folder.
 
-The commands copied directly from the gallery use Wubcraft’s IDs. For other worlds use the commands produced by this importer.
+```powershell
+node import-world.cjs "D:/MyWorld/data/minecraft/maps" "D:/MapImport-01" PlayerName
+```
 
+The checker compares each selected DAT against its download checksum and the target filename. Exact matches are skipped. A different file at the requested ID stops the check before staging anything. On success, copy the missing numeric DATs from the staged `maps/` folder and use `commands.txt` for the named player.

@@ -16,3 +16,5 @@ python website/build_gallery.py --migration migration --out website-dist
 The generator discovers the finalized CSV and its matching `<manifest-stem>-assets/artworks.json`, then reads the DAT and PNG paths from the CSV. Destination IDs, names and placements come from the finalizer. Multiple exports in one folder can be disambiguated by passing the exact CSV path to `--migration`. Choose a fresh output directory for each build.
 
 Preview the site with `python -m http.server 8000 --bind 127.0.0.1 --directory website-dist` and open `http://localhost:8000/`. When ready, deploy the contents of `website-dist/` with `index.html` at the publishing root.
+
+Gallery destination IDs start at **100,000**. For the first build in this range, re-run finalization in a fresh output folder and omit any previous low-ID mapping. Downloaded map files use the gallery IDs directly. See `IMPORT.md` for installation and collision handling.
