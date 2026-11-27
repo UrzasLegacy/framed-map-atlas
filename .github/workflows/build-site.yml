@@ -26,3 +26,44 @@ jobs:
           path: site.zip
           archive: false
           if-no-files-found: error
+
+  release:
+    needs: build
+    if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    concurrency: site-zip-release
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: site.zip
+          skip-decompress: true
+
+      - name: Publish the site download
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          # An older run may finish after a newer one or be retried manually.
+          site_revision() {
+            gh api --method GET "repos/$GH_REPO/commits" \
+              -f sha="$1" -f path=website -F per_page=1 --jq '.[0].sha'
+          }
+          built_revision=$(site_revision "$GITHUB_SHA")
+          current_revision=$(site_revision "$DEFAULT_BRANCH")
+          if [[ "$built_revision" != "$current_revision" ]]; then
+            echo "A newer site revision is already on the default branch."
+            exit 0
+          fi
+
+          python3 -m zipfile -t site.zip
+          tag="site-$GITHUB_SHA"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            echo "This commit already has a site release."
+            exit 0
+          fi
+          gh release create "$tag" site.zip --target "$GITHUB_SHA" --latest \
+            --title "Gallery site (${GITHUB_SHA:0:7})" \
+            --notes "Extract site.zip into the gallery web root. The artwork collection is supplied separately."
