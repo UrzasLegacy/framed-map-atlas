@@ -237,8 +237,18 @@ def artist_credit(name):
     return credit if any(c.isalpha() for c in credit) else ""
 
 
+def layout_key(art):
+    signature = [[t["row"], t["column"], t["original_map_id"], t["clockwise_quarters"],
+                  t["rotation_unknown"], t["kept"], t["pixel_key"]] for t in art["tiles"]]
+    return hashlib.sha256(json.dumps(signature, separators=(",", ":")).encode()).hexdigest()
+
+
+def collection_key(keys):
+    return hashlib.sha256("".join(sorted(keys)).encode()).hexdigest()
+
+
 def gallery_card(art):
-    tiles, names, signature = [], set(), []
+    tiles, names = [], set()
     canvases = art.get("source_canvases", [])
     canvas_ids = {canvas_label(c): i for i, c in enumerate(canvases)}
     for t in art["tiles"]:
@@ -246,10 +256,6 @@ def gallery_card(art):
         names.update([t["chosen_name"], *aliases])
         canvas = canvas_ids[canvas_label(t["source_canvas"])] if t.get("source_canvas") else None
         tiles.append([t["row"], t["column"], t["original_map_id"], t["chosen_name"], t["kept"], canvas, aliases])
-        signature.append([t["row"], t["column"], t["original_map_id"], t["clockwise_quarters"],
-                          t["rotation_unknown"], t["kept"], t["pixel_key"]])
-    # Scan-local G numbers can change. Use the actual placement data to identify a decision.
-    key = hashlib.sha256(json.dumps(signature, separators=(",", ":")).encode()).hexdigest()
     displays, notes = [], set()
     for d in art["displays"]:
         p = d["placements"][0]
@@ -259,7 +265,7 @@ def gallery_card(art):
         notes.add("A missing rotation was previewed at its default angle.")
     names.add(art["title"])
     artists = sorted({credit for n in names if (credit := artist_credit(n))}, key=lambda s: (s.casefold(), s))
-    return dict(key=key, id=art["id"], title=art["title"], width=art["width"], height=art["height"],
+    return dict(key=layout_key(art), id=art["id"], title=art["title"], width=art["width"], height=art["height"],
                 excluded=art["excluded"], gaps=art["gaps"], kept=art["kept_placements"], preview=art["preview"],
                 artists=artists, tiles=tiles, displays=displays, notes=sorted(notes),
                 canvases=[[canvas_label(c), c["placements"], c["excluded"]] for c in canvases])
@@ -268,7 +274,7 @@ def gallery_card(art):
 def gallery(layouts, unmatched, folder):
     ranked = sorted(layouts, key=lambda a: (bool(a["excluded"] or a["gaps"]), -len(a["displays"]), a["id"]))
     cards = [gallery_card(a) for a in ranked]
-    collection = hashlib.sha256("".join(sorted(a["key"] for a in cards)).encode()).hexdigest()
+    collection = collection_key(a["key"] for a in cards)
     payload = json.dumps(dict(collection=collection, cards=cards, ungrouped=len(unmatched)),
                          ensure_ascii=True, separators=(",", ":")).replace("<", "\\u003c")
     template = Path(__file__).with_name("artwork_review.html").read_text(encoding="utf-8")
