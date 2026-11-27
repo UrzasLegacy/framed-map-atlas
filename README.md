@@ -148,10 +148,23 @@ Recovery is a collection-wide choice per original ID, independent of layout stat
 Export the final combined decisions from the reviewed gallery, then run:
 
 ```powershell
-python finalize_manifest.py --manifest "kept-maps/manifest.csv" --gallery "artwork-review" --decisions "artwork-decisions.json" --out "kept-maps/migration-manifest.csv"
+python finalize_manifest.py --manifest "kept-maps/manifest.csv" --gallery "artwork-review3" --decisions "artwork-review3/artwork-decisions.json" --data-dir "D:/Backup/world/data" --review-csv "map-review-final.csv" --out "migration/migration-manifest.csv"
 ```
 
-The helper verifies the gallery collection and the original kept IDs and pixel hashes. It writes a new CSV with the original columns, chosen names, and asset references. Only explicitly selected numeric IDs are omitted. Pixel-identical copies with different IDs and kept maps outside all groupings remain eligible. Your original manifest, DATs, and PNGs stay available. Use the same gallery that produced the decisions file. Sharing checks cover the layouts observed in that gallery.
+Use the original map DAT directory for `--data-dir` when recovering tiles. The optional `--review-csv` supplies chosen names and checks pixel keys for those tiles. Without it, a recovered tile with exactly one observed name takes that name. Other ambiguous or unnamed recoveries keep an empty name.
+
+Finalization applies reviewed removals and recoveries, checks each eligible DAT against its reviewed visible-pixel hash when available, and assigns **one destination map ID per distinct pixel hash**. Fresh assignments start at **1000** in ascending hash order. The representative is the lowest original ID among locked copies, or the lowest original ID if all copies are unlocked. Exported DATs are locked to preserve the finished artwork.
+
+| Output under `migration/` | How to use it |
+| --- | --- |
+| `migration-manifest.csv` | Look up every eligible original ID, including standalone tiles. Each row gives the original chosen name, pixel key, representative original ID, destination ID and paths to the shared assets. |
+| `migration-manifest-assets/dats/map_<destination_id>.dat` and `pngs/map_<destination_id>.png` | One locked DAT and one preview per destination ID. Paths in the manifest are relative to the manifest's folder. |
+| `migration-manifest-assets/artworks.json` | Box-builder input. Each approved artwork has a title, source group IDs, width, height, gap count, and a row-major tile list. Each tile gives its one-based row and column, clockwise quarter-turns, original ID, destination ID and chosen name. Issue an item for **each placement**, even when several use one destination ID. |
+| `migration-manifest-assets/pixel-ids.csv` | Persistent assignment table. On a later run, pass the previous table with `--previous-mapping` to retain issued IDs even if the review or set of hashes changes. Removed hashes stay reserved. |
+
+Saved merges supply their final titles and positions and supersede their source groups. Other groups appear only when marked **Keep artwork**. Excluded or explicitly removed tiles leave gaps at their original positions. Ignoring a grouping preserves its eligible maps in the CSV. For standalone shop items, use the chosen name from the original ID's manifest row. For grouped items, use each tile's chosen name from the JSON.
+
+To skip map IDs already present on the new server, add `--destination-data "D:/NewWorld/map-dat-folder"` pointing to the directory **directly containing the destination map DATs**. The finalizer checks that directory read-only. Without it, the first run assumes IDs from 1000 are available. On a revised export, pass `--previous-mapping "migration/migration-manifest-assets/pixel-ids.csv"` and choose a fresh `--out` path. The command writes a local export for import and does not advance the server's own map-ID counter.
 
 
 Open **Source canvases** on an artwork to see each map-making canvas's dimension, center X/Z, scale, and placement count. Under **Tiles and displays**, find a gold cross by row and column to see its original map ID and source canvas. To search for a missing piece, filter the original sorter's `map-index.csv` by that dimension, `center_x`, `center_z`, and `scale`. Its `path` column leads to every indexed image made on that canvas. Other tiles' canvases are leads for gray gaps, which have no recorded map ID in the layout.
