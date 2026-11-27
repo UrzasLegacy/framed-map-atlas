@@ -6,8 +6,17 @@
   const cards=catalog.cards, byKey=new Map(cards.map(c=>[c.key,c]));
   const signature=(id,name)=>JSON.stringify([id,name]);
   const singles=new Map(cards.filter(c=>c.kind==="single").map(c=>[signature(c.tiles[0].id,c.tiles[0].name),c]));
-  const originals=new Map();
-  for(const [id,name,ids] of catalog.aliases) for(const i of ids) originals.set(i,signature(id,name));
+  // Each destination represents one pixel image. Its old IDs may span several chosen names.
+  const originals=new Map(), oldIdsByImage=new Map();
+  for(const [id,,ids] of catalog.aliases) {
+    if(!oldIdsByImage.has(id)) oldIdsByImage.set(id,[]);
+    const imageIds=oldIdsByImage.get(id);
+    for(const oldId of ids) {
+      imageIds.push(oldId);
+      originals.set(oldId,id);
+    }
+  }
+  for(const ids of oldIdsByImage.values()) ids.sort((a,b)=>a-b);
   function single(tile) {
     const sig=signature(tile.id,tile.name);
     if(!singles.has(sig)) {
@@ -25,6 +34,17 @@
   const pageSize=48, number=n=>n.toLocaleString();
   const node=(tag,text,cls)=>{const n=document.createElement(tag);if(text!=null)n.textContent=text;if(cls)n.className=cls;return n;};
   const thumb=(file)=>{const img=node("img");img.alt="";img.loading="lazy";img.src="collection/images/"+file;return img;};
+  function oldIdCaption(id, compact=false) {
+    const ids=oldIdsByImage.get(id);
+    const label=ids.length===1?"Old Wubby ID":"Old Wubby IDs";
+    const sample=ids.slice(0,3).map(n=>"#"+n).join(", ");
+    if(ids.length<=3) return node("small",label+" · "+sample);
+    if(compact) return node("small",label+" · "+sample+" (+"+(ids.length-3)+")");
+    const details=node("details");
+    details.append(node("summary",label+" · "+ids.length+" with these pixels"),
+                   node("small",ids.map(n=>"#"+n).join(", ")));
+    return details;
+  }
   const feature=cards.find(c=>c.title==="Starry Night Bassline")||cards.find(c=>c.kind==="art")||cards[0];
   if(feature) {
     $("feature").hidden=false;$("heroImage").src="collection/images/"+feature.image;
@@ -49,11 +69,11 @@
   const searchText=new Map(cards.map(c=>[c.key,[c.title,c.originalTitle,...(c.groups||[]),...c.tiles.map(t=>t.name)].join(" ").toLocaleLowerCase()]));
   function filter() {
     const q=$("search").value.trim().toLocaleLowerCase(), numeric=/^#?(-?\d+)$/.exec(q);
-    const id=numeric?Number(numeric[1]):null, alias=originals.get(id);
+    const id=numeric?Number(numeric[1]):null, oldImage=originals.get(id);
     filtered=cards.filter(c=>{
       if(mode!=="all" && mode!==c.kind || $("overlap").checked && c.overlap) return false;
       if(!q || searchText.get(c.key).includes(q)) return true;
-      return numeric && c.tiles.some(t=>t.id===id || signature(t.id,t.name)===alias);
+      return numeric && c.tiles.some(t=>t.id===id || t.id===oldImage);
     });
     page=0;render();
   }
@@ -62,7 +82,8 @@
     for(const c of filtered.slice(page*pageSize,(page+1)*pageSize)) {
       const article=node("article",null,"card"), open=node("button"), mat=node("span",null,"mat");
       mat.append(thumb(c.image));open.onclick=()=>detail(c);
-      open.append(mat,node("strong",c.title),node("small",c.kind==="art"?c.width+" × "+c.height+" · "+c.tiles.length+" tiles":"Single tile · #"+c.tiles[0].id));
+      open.append(mat,node("strong",c.title),node("small",c.kind==="art"?c.width+" × "+c.height+" · "+c.tiles.length+" tiles":"Destination ID · #"+c.tiles[0].id));
+      if(c.kind==="single") open.append(node("br"),oldIdCaption(c.tiles[0].id,true));
       article.append(open,check(c,null,"tick"));frag.append(article);
     }
     $("grid").replaceChildren(frag);
@@ -72,11 +93,19 @@
   }
   function detail(c) {
     const body=$("detailBody"), img=thumb(c.image);img.className="largeArt";img.alt=c.title;
-    body.replaceChildren(node("h2",c.title),node("p",c.kind==="art"?c.width+" × "+c.height+" · "+c.tiles.length+" placements · "+(c.width*c.height-c.tiles.length)+" gaps":"Single tile · Map #"+c.tiles[0].id),img,check(c,"Include in selection","detailPick"));
+    body.replaceChildren(node("h2",c.title),node("p",c.kind==="art"?c.width+" × "+c.height+" · "+c.tiles.length+" placements · "+(c.width*c.height-c.tiles.length)+" gaps":"Single tile · Destination ID #"+c.tiles[0].id),img);
+    if(c.kind==="single") {
+      const info=node("div");info.append(oldIdCaption(c.tiles[0].id));body.append(info);
+    }
+    body.append(check(c,"Include in selection","detailPick"));
     if(c.kind==="art") {
-      const list=node("details"), items=node("div",null,"tileList");list.append(node("summary","Select individual tiles"));
+      const list=node("details"), items=node("div",null,"tileList");list.append(node("summary","Tile IDs and individual selections"));
+      list.append(node("small","Old Wubby IDs include all archived copies with the same pixels."));
       for(const t of c.tiles) {
-        const row=node("div",null,"entry");row.append(thumb(t.id+".png"),check(single(t),"R"+t.row+" C"+t.col+" · "+(t.name||"Map #"+t.id)+" · #"+t.id));
+        const row=node("div",null,"entry"), info=node("div");
+        info.append(check(single(t),"R"+t.row+" C"+t.col+" · "+(t.name||"Unnamed tile")),
+                    node("br"),node("small","Destination ID · #"+t.id),node("br"),oldIdCaption(t.id));
+        row.append(thumb(t.id+".png"),info);
         items.append(row);
       }
       list.append(items);body.append(list);
