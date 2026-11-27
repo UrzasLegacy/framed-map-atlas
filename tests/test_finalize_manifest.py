@@ -5,7 +5,9 @@ from tempfile import TemporaryDirectory
 import unittest
 
 from finalize_manifest import finalize
+from map_assets import pixel_signature, render
 from reconstruct_artworks import collection_key, layout_key
+from test_scanner import tag
 
 
 class MigrationManifestTest(unittest.TestCase):
@@ -54,3 +56,34 @@ class MigrationManifestTest(unittest.TestCase):
 
     def test_existing_ignore_removes_nothing(self):
         self.assertEqual(self.run_export([dict(layout_key=self.keys[0], decision="Ignore grouping")], "v1"), (4,0))
+
+    def test_recovery_requires_matching_dat_and_exports_new_pair(self):
+        colors = bytes([5, 7]) + bytes(16382)
+        key, _ = pixel_signature(colors)
+        data = dict(format="framed-map-atlas/artwork-review-v3", collection=collection_key(self.keys),
+                    decisions=[dict(layout_key=self.keys[0], decision="Remove tiles", remove_ids=[1])],
+                    recover_tiles=[dict(map_id=99, pixel_key=key)])
+        self.decisions.write_text(json.dumps(data))
+        original = self.manifest.read_bytes()
+        src = self.root / "map_00099.dat"
+        def run():
+            return finalize(self.manifest, self.root, self.decisions, self.out, self.root, review)
+        review = self.root / "sorter-review.csv"
+        review.write_text(f'map_id,pixel_key,chosen_name\n99,{key},"Moon, part two"\n')
+        with self.assertRaisesRegex(ValueError, "found 0"):
+            run()
+        src.write_bytes(b"\x0a\0\0" + tag({"data":{"colors":bytes(16384)}})[1])
+        with self.assertRaisesRegex(ValueError, "pixels differ"):
+            run()
+        self.assertFalse(self.out.exists())
+        self.assertFalse((self.out.parent / "migration-assets").exists())
+        src.write_bytes(b"\x0a\0\0" + tag({"data":{"colors":colors}})[1])
+        self.assertEqual(run(), (4,1))
+        with self.out.open(encoding="utf-8-sig", newline="") as f:
+            rows = list(csv.DictReader(f))
+        self.assertEqual([int(r["original_map_id"]) for r in rows], [2,3,4,99])
+        row = rows[-1]
+        self.assertEqual((row["pixel_key"],row["chosen_name"]),(key,"Moon, part two"))
+        self.assertEqual((self.out.parent / row["dat_path"]).read_bytes(),src.read_bytes())
+        self.assertEqual((self.out.parent / row["png_path"]).read_bytes(),render(src))
+        self.assertEqual(original,self.manifest.read_bytes())
