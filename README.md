@@ -126,7 +126,24 @@ Use **Keep artwork**, **Ignore grouping**, or **Needs investigation** per layout
 
 **Mark tiles for removal** opens a checklist of distinct kept IDs on the layout. On first opening, only IDs appearing in this layout alone in the current gallery are checked. Shared IDs start unchecked. Expand a shared ID to open its other layouts in separate tabs and see each decision. Untick any tile worth keeping individually. **Cancel** discards the draft. Apply the selection to move the layout into the **Remove tiles** queue. **Edit removal** reopens the saved checklist. Changing the layout to another decision withdraws its removal requests. If two layouts marked the same ID, withdraw both requests to restore it. An explicit shared-ID selection also affects a layout marked **Keep artwork**.
 
+### Join fragments from different groups
+
+Open **Merge with another group** on the main layout. Find the fragment by group ID, tile ID, or name, select the match, then click **Add group**. The preview starts with the fragment on the right. Set its **Top row** and **Left column**, or click **Place on preview** and then the cell where the fragment's top-left corner belongs. You can add more groups before saving.
+
+| Repair | Placement |
+| --- | --- |
+| Fill two adjacent gray cells in a 3×5 layout | Use the 3×5 as the first group. Place the two-tile fragment at the first missing cell. The preview should read **3 × 5 · 15 placed · 0 gaps**. |
+| Join two vertical 1×2 layouts | Leave the first at row 1, column 1. Put the second at row 1, column 2. The result is **2 × 2**. For two horizontal strips, place the second at row 2, column 1. |
+
+Conflicting occupied cells are outlined in red and must be resolved before saving. If a gold cross covers the intended spot, the checkbox explicitly allows a kept tile to cover that excluded placement in this merge. A merge preserves the displayed orientation of each source group and each tile's rotation. Give the artwork a name and choose **Save merged artwork**. Use **Saved merged artworks** to reopen, reposition, or undo it.
+
+**Export artwork decisions** includes the corrections in `merged_artworks`. Each entry records the title, source group offsets, final width and height, and a row-major list of tiles with one-based row/column, original map ID, rotation, and eligibility for the migration manifest. Repeated map IDs keep every placement. Earlier decision exports still import. Source-group review decisions and tile recovery/removal choices are managed separately.
+
 ### Generate the final migration manifest
+
+**Recover excluded tiles** appears on layouts with gold crosses. The checklist gives the original ID and every affected row and column. To include thumbnails, refresh with `--data-dir "D:\Backup\world\data"` or `--map-index "sorted-maps/map-index.csv"`. Check the pieces you recognize and save. Available thumbnails appear in place on the review card, using the recorded rotations. The linked composite PNG remains the original scan preview. Gray gaps have no observed ID.
+
+Recovery is a collection-wide choice per original ID, independent of layout status. Uncheck an ID from any matching layout to undo it. Importing reviewer exports combines selected recovery IDs. Export the final combined decisions after making any corrections.
 
 Export the final combined decisions from the reviewed gallery, then run:
 

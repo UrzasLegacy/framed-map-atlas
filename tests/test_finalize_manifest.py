@@ -60,9 +60,9 @@ class MigrationManifestTest(unittest.TestCase):
     def test_recovery_requires_matching_dat_and_exports_new_pair(self):
         colors = bytes([5, 7]) + bytes(16382)
         key, _ = pixel_signature(colors)
-        data = dict(format="framed-map-atlas/artwork-review-v3", collection=collection_key(self.keys),
+        data = dict(format="framed-map-atlas/artwork-review-v4", collection=collection_key(self.keys),
                     decisions=[dict(layout_key=self.keys[0], decision="Remove tiles", remove_ids=[1])],
-                    recover_tiles=[dict(map_id=99, pixel_key=key)])
+                    recover_tiles=[dict(map_id=99, pixel_key=key)], merged_artworks=[])
         self.decisions.write_text(json.dumps(data))
         original = self.manifest.read_bytes()
         src = self.root / "map_00099.dat"
