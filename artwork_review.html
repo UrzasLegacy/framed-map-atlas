@@ -25,6 +25,7 @@ details{margin:.45rem 0}ul,ol{padding-left:1.3rem}.match{background:#ffe576;colo
 dialog{width:min(40rem,92vw);max-height:84vh;border:1px solid var(--line);border-radius:.6rem}
 dialog::backdrop{background:#0008}#tile-list{max-height:46vh;overflow:auto;margin:.8rem 0;padding:.2rem}
 .tile-option{border-bottom:1px solid var(--line);padding:.4rem 0}.tile-option label{display:flex;align-items:baseline;gap:.45rem}
+.tile-option img{width:5rem;image-rendering:pixelated}.restored{position:absolute;object-fit:fill;background:Canvas;image-rendering:pixelated}
 </style></head><body>
 <header><h1>Map artwork review</h1><p id="overview"></p></header>
 <fieldset><legend>Find layouts</legend><div class="filters">
@@ -41,22 +42,22 @@ dialog::backdrop{background:#0008}#tile-list{max-height:46vh;overflow:auto;margi
 <p class="note">Gold crosses are excluded tiles. Gray cells are gaps. Artist credits are inferred from names recorded on the maps.</p>
 <p id="notice" role="status"></p><nav id="top" aria-label="Result pages"></nav><main id="grid"></main><nav id="bottom" aria-label="Result pages"></nav>
 <dialog id="tile-review" aria-labelledby="tile-heading"><h2 id="tile-heading"></h2>
-<p>Only checked IDs will be omitted from the final migration manifest. On first opening, only IDs exclusive to this layout in this gallery are checked.</p>
+<p id="tile-help"></p>
 <div id="tile-list"></div><div class="actions"><button id="tile-apply"></button><button id="tile-cancel">Cancel</button></div></dialog>
 <script type="application/json" id="data">__ARTWORK_DATA__</script>
 <script>
 "use strict";
-const {collection,cards,ungrouped}=JSON.parse(document.getElementById("data").textContent);
+const {collection,cards,ungrouped,recovery={}}=JSON.parse(document.getElementById("data").textContent);
 const $=id=>document.getElementById(id);
 const choices=["Keep artwork","Needs investigation","Ignore grouping"];
 const removeStatus="Remove tiles";
 const ids=new Set(cards.map(a=>a.key));
 const legacyStore="framed-map-atlas/artwork-decisions/"+collection;
-const store=legacyStore+"/v2";
-const keptByLayout=new Map(),owners=new Map();
+const store=legacyStore+"/v3";
+const keptByLayout=new Map(),owners=new Map(),excludedIds=new Set();
 for(const a of cards){
   const kept=new Map();
-  for(const [, ,id,name,inManifest] of a.tiles)if(inManifest)kept.set(id,name);
+  for(const [, ,id,name,inManifest] of a.tiles){if(inManifest)kept.set(id,name);else excludedIds.add(id)}
   keptByLayout.set(a.key,kept);
   for(const id of kept.keys()){
     if(!owners.has(id))owners.set(id,[]);
@@ -66,7 +67,7 @@ for(const a of cards){
 const fmt=n=>n.toLocaleString("en-US");
 const fold=s=>s.normalize("NFKC").toLowerCase().trim();
 const pageSize=48;
-let decisions=new Map(),removals=new Map(),page=0;
+let decisions=new Map(),removals=new Map(),additions=new Map(),page=0;
 function el(tag,text){const n=document.createElement(tag);if(text!==undefined)n.textContent=text;return n}
 function button(text,action){const b=el("button",text);b.type="button";b.onclick=action;return b}
 function option(select,text,value=text){const o=el("option",text);o.value=value;select.append(o)}
@@ -80,18 +81,36 @@ function validateSelection(key,value,selected){
      !selected.every(id=>keptByLayout.get(key)?.has(id)))throw Error("Invalid removal IDs for this layout.");
   return [...selected].sort((a,b)=>a-b)
 }
+function recoveryEntries(rows){
+  if(!Array.isArray(rows))throw Error("Invalid recovery list.");
+  const result=new Map();
+  for(const row of rows){
+    if(!row||!excludedIds.has(row.map_id)||result.has(row.map_id)||
+       !(row.pixel_key===null||typeof row.pixel_key==="string"&&/^[0-9a-f]{64}$/.test(row.pixel_key)))
+      throw Error("Invalid or repeated excluded tile ID.");
+    const observed=recovery[row.map_id]?.[0];
+    if(observed&&row.pixel_key&&observed!==row.pixel_key)throw Error("Recovery pixel key differs for #"+row.map_id);
+    result.set(row.map_id,row.pixel_key??observed??null)
+  }
+  return result
+}
+function exportedRecovery(){return [...additions].sort(([a],[b])=>a-b).map(([map_id,pixel_key])=>({map_id,pixel_key}))}
 function loadSaved(){
-  const rows=JSON.parse(localStorage.getItem(store)??localStorage.getItem(legacyStore)??"[]");
+  const stored=JSON.parse(localStorage.getItem(store)??localStorage.getItem(legacyStore+"/v2")??localStorage.getItem(legacyStore)??"[]");
+  const rows=Array.isArray(stored)?stored:stored.decisions;
   const states=new Map(),selected=new Map();
   for(const [key,value,tiles] of rows){
     if(!ids.has(key))continue;
     const selection=validateSelection(key,value,tiles);
     states.set(key,value);if(selection.length)selected.set(key,selection)
   }
-  removals=selected;return states
+  additions=recoveryEntries(Array.isArray(stored)?[]:stored.recover_tiles);removals=selected;return states
 }
 try{decisions=loadSaved()}catch{notice("Browser storage is unavailable or unreadable. Import your artwork decisions to restore them.")}
-function save(){try{localStorage.setItem(store,JSON.stringify([...decisions].map(([k,v])=>removals.has(k)?[k,v,removals.get(k)]:[k,v])))}catch{notice("Browser storage is unavailable. Export your decisions before closing.")}}
+function save(){try{
+  const rows=[...decisions].map(([k,v])=>removals.has(k)?[k,v,removals.get(k)]:[k,v]);
+  localStorage.setItem(store,JSON.stringify({decisions:rows,recover_tiles:exportedRecovery()}))
+}catch{notice("Browser storage is unavailable. Export your decisions before closing.")}}
 window.addEventListener("storage",e=>{if(e.key===store||e.key===null){try{decisions=loadSaved();render()}catch{notice("Could not reload browser decisions.")}}});
 for(const a of cards){
   a.names=[...new Set([a.id,a.title,...a.tiles.flatMap(t=>[t[3],...t[6]])].filter(Boolean).map(fold))];
@@ -121,6 +140,7 @@ function editRemoval(a){
   const selected=new Set(saved??[...kept.keys()].filter(id=>owners.get(id).length===1));
   const dialog=$("tile-review"),apply=$("tile-apply"),list=$("tile-list");
   $("tile-heading").textContent="Remove tiles · "+(a.title||a.id);
+  $("tile-help").textContent="Only checked IDs will be omitted from the final migration manifest. On first opening, only IDs exclusive to this layout in this gallery are checked.";
   function update(){
     apply.textContent=selected.size?"Mark "+fmt(selected.size)+(selected.size===1?" ID":" IDs")+" for removal":
       saved?"Clear removal and return to Needs investigation":"Select an ID to mark";
@@ -159,11 +179,47 @@ function editRemoval(a){
   update();dialog.showModal()
 }
 $("tile-cancel").onclick=()=>$("tile-review").close();
+function editRecovery(a){
+  const cells=new Map();
+  for(const [r,c,id,,kept] of a.tiles)if(!kept){
+    if(!cells.has(id))cells.set(id,[]);
+    cells.get(id).push("R"+r+" C"+c)
+  }
+  const boxes=new Map(),list=$("tile-list");list.replaceChildren();
+  $("tile-heading").textContent="Recover excluded tiles · "+(a.title||a.id);
+  $("tile-help").textContent="Check the original IDs to include in the migration. Each choice applies everywhere that ID appears. Uncheck an ID to undo its recovery.";
+  for(const [id,positions] of cells){
+    const row=el("div"),label=el("label"),box=el("input");row.className="tile-option";
+    box.type="checkbox";box.checked=additions.has(id);boxes.set(id,box);
+    label.append(box,"#"+id+" · "+positions.join(", "));row.append(label);
+    if(recovery[id]){
+      const img=el("img");img.src="data:image/png;base64,"+recovery[id][1];img.alt="Map "+id;row.append(img)
+    }else row.append(el("small","Tile preview unavailable. Finalization needs this ID’s original DAT."));
+    list.append(row)
+  }
+  const apply=$("tile-apply");apply.disabled=false;apply.textContent="Save recovery choices";
+  apply.onclick=()=>{
+    for(const [id,box] of boxes){
+      if(box.checked)additions.set(id,additions.get(id)??recovery[id]?.[0]??null);
+      else additions.delete(id)
+    }
+    $("tile-review").close();notice("Saved recovery choices for "+a.id+".");save();render()
+  };
+  $("tile-review").showModal()
+}
 function makeCard(a,tileId,markedCounts){
   const card=el("article"),title=a.title||a.id,photo=el("a"),map=el("span"),img=el("img");
   photo.className="photo";photo.href=a.preview;photo.title="Open composite PNG";
   map.className="map";map.style.setProperty("--ratio",String(a.width/a.height));
   img.src=a.preview;img.alt=title;img.loading="lazy";map.append(img);photo.append(map);card.append(photo);
+  let recovered=0;
+  for(const [r,c,id,,kept,,,turns] of a.tiles)if(!kept&&additions.has(id)){
+    recovered++;
+    if(!recovery[id])continue;
+    const tile=el("img");tile.className="restored";tile.alt="Recovered map "+id;tile.src="data:image/png;base64,"+recovery[id][1];
+    Object.assign(tile.style,{left:100*(c-1)/a.width+"%",top:100*(r-1)/a.height+"%",width:100/a.width+"%",height:100/a.height+"%",transform:"rotate("+(turns||0)*90+"deg)"});
+    map.append(tile)
+  }
   const hits=a.tiles.filter(t=>t[2]===tileId);
   for(const [r,c] of hits){
     const mark=el("span");mark.className="hit";
@@ -212,6 +268,10 @@ function makeCard(a,tileId,markedCounts){
   }
   const removal=button(current===removeStatus?"Edit removal ("+removals.get(a.key).length+" IDs)":"Mark tiles for removal",()=>editRemoval(a));
   removal.className="removal";removal.setAttribute("aria-pressed",String(current===removeStatus));buttons.append(removal);
+  if(a.excluded){
+    const recover=button("Recover excluded tiles"+(recovered?" ("+recovered+"/"+a.excluded+" placements)":""),
+      ()=>editRecovery(a));recover.className="removal";buttons.append(recover)
+  }
   decision.append(el("legend","Layout decision"),buttons);card.append(canvases,info,decision);return card
 }
 function nav(id,count,pages){
@@ -238,7 +298,7 @@ function render(){
   nav("top",rows.length,pages);nav("bottom",rows.length,pages);
   $("grid").replaceChildren(...rows.slice(page*pageSize,(page+1)*pageSize).map(a=>makeCard(a,tileId,markedCounts)));
   if(!rows.length)$("grid").append(el("p","No matching layouts. Change the filters or select All decisions."));
-  $("progress").textContent=fmt(decisions.size)+" / "+fmt(cards.length)+" layouts reviewed · "+fmt(markedCounts.size)+" distinct IDs marked for removal"
+  $("progress").textContent=fmt(decisions.size)+" / "+fmt(cards.length)+" layouts reviewed · "+fmt(markedCounts.size)+" IDs marked for removal · "+fmt(additions.size)+" for recovery"
 }
 $("export").onclick=()=>{
   const entries=cards.filter(a=>decisions.has(a.key)).map(a=>{
@@ -246,15 +306,17 @@ $("export").onclick=()=>{
     if(removals.has(a.key))row.remove_ids=removals.get(a.key);
     return row
   });
-  const data={format:"framed-map-atlas/artwork-review-v2",collection,decisions:entries};
+  const data={format:"framed-map-atlas/artwork-review-v3",collection,decisions:entries,recover_tiles:exportedRecovery()};
   const url=URL.createObjectURL(new Blob([JSON.stringify(data,null,2)],{type:"application/json"}));
   const link=el("a");link.href=url;link.download="artwork-decisions.json";document.body.append(link);link.click();link.remove();
   setTimeout(()=>URL.revokeObjectURL(url),1000)
 };
 $("import").onclick=()=>$("file").click();
 function importDecisions(data){
-  if(!["framed-map-atlas/artwork-review-v1","framed-map-atlas/artwork-review-v2"].includes(data?.format)||!Array.isArray(data.decisions))throw Error("Choose an exported artwork-decisions.json file.");
+  if(!["framed-map-atlas/artwork-review-v1","framed-map-atlas/artwork-review-v2","framed-map-atlas/artwork-review-v3"].includes(data?.format)||!Array.isArray(data.decisions))throw Error("Choose an exported artwork-decisions.json file.");
   if(data.collection!==collection)throw Error("This file belongs to a different gallery collection.");
+  const recovered=recoveryEntries(data.format.endsWith("-v3")?data.recover_tiles:[]);
+  for(const [id,key] of recovered)if(key&&additions.get(id)&&additions.get(id)!==key)throw Error("Conflicting recovery pixel keys for #"+id);
   const incoming=new Map();
   for(const row of data.decisions){
     if(!row||!ids.has(row.layout_key)||incoming.has(row.layout_key))throw Error("Invalid or repeated layout decision in this file.");
@@ -266,7 +328,8 @@ function importDecisions(data){
     if(!decisions.has(key)){decisions.set(key,value);if(selected.length)removals.set(key,selected);added++}
     else if(decisions.get(key)!==value||JSON.stringify(removals.get(key)||[])!==JSON.stringify(selected))conflicts++
   }
-  notice(added+" decisions imported. "+conflicts+" conflicting local decisions preserved.");save();render()
+  for(const [id,key] of recovered)additions.set(id,additions.get(id)??key);
+  notice(added+" decisions imported. "+recovered.size+" recovery IDs merged. "+conflicts+" conflicting local decisions preserved.");save();render()
 }
 $("file").onchange=async e=>{
   const file=e.target.files[0];if(!file)return;
