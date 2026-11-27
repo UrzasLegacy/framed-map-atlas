@@ -21,6 +21,10 @@ details{margin:.45rem 0}ul,ol{padding-left:1.3rem}.match{background:#ffe576;colo
 .decision-buttons{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.35rem}
 .decision-buttons button{min-height:2.25rem;line-height:1.2}
 .decision-buttons button[aria-pressed="true"]{font-weight:700;box-shadow:inset 0 0 0 2px currentColor}
+.decision-buttons .removal{grid-column:1 / -1}
+dialog{width:min(40rem,92vw);max-height:84vh;border:1px solid var(--line);border-radius:.6rem}
+dialog::backdrop{background:#0008}#tile-list{max-height:46vh;overflow:auto;margin:.8rem 0;padding:.2rem}
+.tile-option{border-bottom:1px solid var(--line);padding:.4rem 0}.tile-option label{display:flex;align-items:baseline;gap:.45rem}
 </style></head><body>
 <header><h1>Map artwork review</h1><p id="overview"></p></header>
 <fieldset><legend>Find layouts</legend><div class="filters">
@@ -31,33 +35,63 @@ details{margin:.45rem 0}ul,ol{padding-left:1.3rem}.match{background:#ffe576;colo
 <label>Height<input type="number" id="height" min="1" step="1" placeholder="Any"></label>
 <label>Excluded tiles<select id="excluded"><option value="">Any</option><option value="yes">Has excluded tiles</option><option value="no">None excluded</option></select></label>
 <label>Gaps<select id="gaps"><option value="">Any</option><option value="yes">Has gaps</option><option value="no">No gaps</option></select></label>
-<label>Review status<select id="status"><option selected>Unreviewed</option><option>All decisions</option><option>Keep artwork</option><option>Needs investigation</option><option>Ignore grouping</option></select></label>
+<label>Review status<select id="status"><option selected>Unreviewed</option><option>All decisions</option><option>Keep artwork</option><option>Needs investigation</option><option>Ignore grouping</option><option>Remove tiles</option></select></label>
 <button type="button" id="clear">Clear filters</button></div></fieldset>
 <div class="actions"><button id="export">Export artwork decisions</button><button id="import">Import artwork decisions</button><input id="file" type="file" accept=".json,application/json" hidden><span id="progress"></span></div>
 <p class="note">Gold crosses are excluded tiles. Gray cells are gaps. Artist credits are inferred from names recorded on the maps.</p>
 <p id="notice" role="status"></p><nav id="top" aria-label="Result pages"></nav><main id="grid"></main><nav id="bottom" aria-label="Result pages"></nav>
+<dialog id="tile-review" aria-labelledby="tile-heading"><h2 id="tile-heading"></h2>
+<p>Only checked IDs will be omitted from the final migration manifest. On first opening, only IDs exclusive to this layout in this gallery are checked.</p>
+<div id="tile-list"></div><div class="actions"><button id="tile-apply"></button><button id="tile-cancel">Cancel</button></div></dialog>
 <script type="application/json" id="data">__ARTWORK_DATA__</script>
 <script>
 "use strict";
 const {collection,cards,ungrouped}=JSON.parse(document.getElementById("data").textContent);
 const $=id=>document.getElementById(id);
 const choices=["Keep artwork","Needs investigation","Ignore grouping"];
+const removeStatus="Remove tiles";
 const ids=new Set(cards.map(a=>a.key));
-const store="framed-map-atlas/artwork-decisions/"+collection;
+const legacyStore="framed-map-atlas/artwork-decisions/"+collection;
+const store=legacyStore+"/v2";
+const keptByLayout=new Map(),owners=new Map();
+for(const a of cards){
+  const kept=new Map();
+  for(const [, ,id,name,inManifest] of a.tiles)if(inManifest)kept.set(id,name);
+  keptByLayout.set(a.key,kept);
+  for(const id of kept.keys()){
+    if(!owners.has(id))owners.set(id,[]);
+    owners.get(id).push(a)
+  }
+}
 const fmt=n=>n.toLocaleString("en-US");
 const fold=s=>s.normalize("NFKC").toLowerCase().trim();
 const pageSize=48;
-let decisions=new Map(),page=0;
+let decisions=new Map(),removals=new Map(),page=0;
 function el(tag,text){const n=document.createElement(tag);if(text!==undefined)n.textContent=text;return n}
 function button(text,action){const b=el("button",text);b.type="button";b.onclick=action;return b}
 function option(select,text,value=text){const o=el("option",text);o.value=value;select.append(o)}
 function notice(text){$("notice").textContent=text}
-function loadSaved(){
-  const rows=JSON.parse(localStorage.getItem(store)||"[]");
-  return new Map(rows.filter(([key,value])=>ids.has(key)&&choices.includes(value)))
+function validateSelection(key,value,selected){
+  if(value!==removeStatus){
+    if(!choices.includes(value)||selected!==undefined)throw Error("Invalid layout decision.");
+    return []
+  }
+  if(!Array.isArray(selected)||!selected.length||new Set(selected).size!==selected.length||
+     !selected.every(id=>keptByLayout.get(key)?.has(id)))throw Error("Invalid removal IDs for this layout.");
+  return [...selected].sort((a,b)=>a-b)
 }
-try{decisions=loadSaved()}catch{notice("Browser storage is unavailable or unreadable. Export your decisions before closing.")}
-function save(){try{localStorage.setItem(store,JSON.stringify([...decisions]))}catch{notice("Browser storage is unavailable. Export your decisions before closing.")}}
+function loadSaved(){
+  const rows=JSON.parse(localStorage.getItem(store)??localStorage.getItem(legacyStore)??"[]");
+  const states=new Map(),selected=new Map();
+  for(const [key,value,tiles] of rows){
+    if(!ids.has(key))continue;
+    const selection=validateSelection(key,value,tiles);
+    states.set(key,value);if(selection.length)selected.set(key,selection)
+  }
+  removals=selected;return states
+}
+try{decisions=loadSaved()}catch{notice("Browser storage is unavailable or unreadable. Import your artwork decisions to restore them.")}
+function save(){try{localStorage.setItem(store,JSON.stringify([...decisions].map(([k,v])=>removals.has(k)?[k,v,removals.get(k)]:[k,v])))}catch{notice("Browser storage is unavailable. Export your decisions before closing.")}}
 window.addEventListener("storage",e=>{if(e.key===store||e.key===null){try{decisions=loadSaved();render()}catch{notice("Could not reload browser decisions.")}}});
 for(const a of cards){
   a.names=[...new Set([a.id,a.title,...a.tiles.flatMap(t=>[t[3],...t[6]])].filter(Boolean).map(fold))];
@@ -82,7 +116,50 @@ function idQuery(query){
 function presence(value,count){return !value||(value==="yes")===(count>0)}
 function details(label){const d=el("details");d.append(el("summary",label));return d}
 function list(parent,values){const ul=el("ul");for(const v of values)ul.append(el("li",v));parent.append(ul)}
-function makeCard(a,tileId){
+function editRemoval(a){
+  const saved=removals.get(a.key), kept=keptByLayout.get(a.key);
+  const selected=new Set(saved??[...kept.keys()].filter(id=>owners.get(id).length===1));
+  const dialog=$("tile-review"),apply=$("tile-apply"),list=$("tile-list");
+  $("tile-heading").textContent="Remove tiles · "+(a.title||a.id);
+  function update(){
+    apply.textContent=selected.size?"Mark "+fmt(selected.size)+(selected.size===1?" ID":" IDs")+" for removal":
+      saved?"Clear removal and return to Needs investigation":"Select an ID to mark";
+    apply.disabled=!selected.size&&!saved
+  }
+  list.replaceChildren();
+  for(const [id,name] of kept){
+    const row=el("div"),label=el("label"),box=el("input");
+    row.className="tile-option";box.type="checkbox";box.checked=selected.has(id);
+    box.onchange=()=>{if(box.checked)selected.add(id);else selected.delete(id);update()};
+    label.append(box,"#"+id+(name?" · "+name:""));row.append(label);
+    const others=owners.get(id).filter(other=>other!==a);
+    if(others.length){
+      const keptCount=others.filter(other=>decisions.get(other.key)==="Keep artwork").length;
+      const more=details("Shared with "+fmt(others.length)+" other layouts · "+fmt(keptCount)+" marked Keep artwork");
+      if(others.some(other=>removals.get(other.key)?.includes(id)))row.append(el("small","This ID is already marked for removal by another layout."));
+      more.addEventListener("toggle",()=>{
+        if(!more.open||more.childElementCount>1)return;
+        const ul=el("ul");
+        for(const other of others){
+          const link=el("a",other.id+" · "+(other.title||"Untitled")+" · "+(decisions.get(other.key)||"Unreviewed"));
+          link.href="#layout="+encodeURIComponent(other.id);link.target="_blank";link.rel="noopener";
+          const li=el("li");li.append(link);ul.append(li)
+        }
+        more.append(ul)
+      });
+      row.append(more)
+    }
+    list.append(row)
+  }
+  apply.onclick=()=>{
+    if(selected.size){removals.set(a.key,[...selected].sort((x,y)=>x-y));decisions.set(a.key,removeStatus)}
+    else{removals.delete(a.key);decisions.set(a.key,"Needs investigation")}
+    dialog.close();notice(a.id+" · "+selected.size+" IDs marked by this layout.");save();render()
+  };
+  update();dialog.showModal()
+}
+$("tile-cancel").onclick=()=>$("tile-review").close();
+function makeCard(a,tileId,markedCounts){
   const card=el("article"),title=a.title||a.id,photo=el("a"),map=el("span"),img=el("img");
   photo.className="photo";photo.href=a.preview;photo.title="Open composite PNG";
   map.className="map";map.style.setProperty("--ratio",String(a.width/a.height));
@@ -96,6 +173,8 @@ function makeCard(a,tileId){
   card.append(el("h2",title),el("small",a.id+" · "+a.width+" × "+a.height+" · "+a.kept+" kept · "+a.excluded+" excluded · "+a.gaps+" gaps"));
   if(hits.length)card.append(el("p","#"+tileId+" at "+hits.map(t=>"R"+t[0]+" C"+t[1]).join(", ")));
   if(a.artists.length)card.append(el("p","Possible credit · "+a.artists.join(" / ")));
+  const own=new Set(removals.get(a.key)),elsewhere=[...keptByLayout.get(a.key).keys()].filter(id=>(markedCounts.get(id)||0)>(own.has(id)?1:0));
+  if(elsewhere.length)card.append(el("p","Marked for removal by other layouts: "+elsewhere.map(id=>"#"+id).join(", ")));
   const canvases=details(a.canvases.length===1?"Source canvas · "+a.canvases[0][0]:"Source canvases ("+a.canvases.length+" known)");
   const locations=el("ul");
   for(const [label,count,excluded] of a.canvases){
@@ -125,11 +204,14 @@ function makeCard(a,tileId){
   for(const value of [...choices,"Unreviewed"]){
     const b=button(value,()=>{
       if(value===current)return;
+      removals.delete(a.key);
       if(value==="Unreviewed")decisions.delete(a.key);else decisions.set(a.key,value);
       notice(a.id+" · "+value);save();render()
     });
     b.setAttribute("aria-pressed",String(value===current));buttons.append(b)
   }
+  const removal=button(current===removeStatus?"Edit removal ("+removals.get(a.key).length+" IDs)":"Mark tiles for removal",()=>editRemoval(a));
+  removal.className="removal";removal.setAttribute("aria-pressed",String(current===removeStatus));buttons.append(removal);
   decision.append(el("legend","Layout decision"),buttons);card.append(canvases,info,decision);return card
 }
 function nav(id,count,pages){
@@ -151,31 +233,38 @@ function render(){
     presence($("excluded").value,a.excluded)&&presence($("gaps").value,a.gaps)&&
     (status==="All decisions"||status===(decisions.get(a.key)||"Unreviewed")));
   const pages=Math.ceil(rows.length/pageSize);page=Math.max(0,Math.min(page,pages-1));
+  const markedCounts=new Map();
+  for(const tiles of removals.values())for(const id of tiles)markedCounts.set(id,(markedCounts.get(id)||0)+1);
   nav("top",rows.length,pages);nav("bottom",rows.length,pages);
-  $("grid").replaceChildren(...rows.slice(page*pageSize,(page+1)*pageSize).map(a=>makeCard(a,tileId)));
+  $("grid").replaceChildren(...rows.slice(page*pageSize,(page+1)*pageSize).map(a=>makeCard(a,tileId,markedCounts)));
   if(!rows.length)$("grid").append(el("p","No matching layouts. Change the filters or select All decisions."));
-  $("progress").textContent=fmt(decisions.size)+" / "+fmt(cards.length)+" layouts reviewed"
+  $("progress").textContent=fmt(decisions.size)+" / "+fmt(cards.length)+" layouts reviewed · "+fmt(markedCounts.size)+" distinct IDs marked for removal"
 }
 $("export").onclick=()=>{
-  const entries=cards.filter(a=>decisions.has(a.key)).map(a=>({layout_key:a.key,group:a.id,title:a.title,decision:decisions.get(a.key)}));
-  const data={format:"framed-map-atlas/artwork-review-v1",collection,decisions:entries};
+  const entries=cards.filter(a=>decisions.has(a.key)).map(a=>{
+    const row={layout_key:a.key,group:a.id,title:a.title,decision:decisions.get(a.key)};
+    if(removals.has(a.key))row.remove_ids=removals.get(a.key);
+    return row
+  });
+  const data={format:"framed-map-atlas/artwork-review-v2",collection,decisions:entries};
   const url=URL.createObjectURL(new Blob([JSON.stringify(data,null,2)],{type:"application/json"}));
   const link=el("a");link.href=url;link.download="artwork-decisions.json";document.body.append(link);link.click();link.remove();
   setTimeout(()=>URL.revokeObjectURL(url),1000)
 };
 $("import").onclick=()=>$("file").click();
 function importDecisions(data){
-  if(data?.format!=="framed-map-atlas/artwork-review-v1"||!Array.isArray(data.decisions))throw Error("Choose an exported artwork-decisions.json file.");
+  if(!["framed-map-atlas/artwork-review-v1","framed-map-atlas/artwork-review-v2"].includes(data?.format)||!Array.isArray(data.decisions))throw Error("Choose an exported artwork-decisions.json file.");
   if(data.collection!==collection)throw Error("This file belongs to a different gallery collection.");
   const incoming=new Map();
   for(const row of data.decisions){
-    if(!row||!ids.has(row.layout_key)||!choices.includes(row.decision)||incoming.has(row.layout_key))throw Error("Invalid or repeated layout decision in this file.");
-    incoming.set(row.layout_key,row.decision)
+    if(!row||!ids.has(row.layout_key)||incoming.has(row.layout_key))throw Error("Invalid or repeated layout decision in this file.");
+    const selected=validateSelection(row.layout_key,row.decision,row.remove_ids);
+    incoming.set(row.layout_key,[row.decision,selected])
   }
   let added=0,conflicts=0;
-  for(const [key,value] of incoming){
-    if(!decisions.has(key)){decisions.set(key,value);added++}
-    else if(decisions.get(key)!==value)conflicts++
+  for(const [key,[value,selected]] of incoming){
+    if(!decisions.has(key)){decisions.set(key,value);if(selected.length)removals.set(key,selected);added++}
+    else if(decisions.get(key)!==value||JSON.stringify(removals.get(key)||[])!==JSON.stringify(selected))conflicts++
   }
   notice(added+" decisions imported. "+conflicts+" conflicting local decisions preserved.");save();render()
 }
@@ -184,5 +273,7 @@ $("file").onchange=async e=>{
   try{importDecisions(JSON.parse(await file.text()))}catch(error){notice("Import failed. "+error.message)}
   e.target.value=""
 };
+const linkedLayout=new URLSearchParams(window.location.hash.slice(1)).get("layout");
+if(linkedLayout&&cards.some(a=>a.id===linkedLayout)){resetFilters();$("query").value=linkedLayout}
 render();
 </script></body></html>
