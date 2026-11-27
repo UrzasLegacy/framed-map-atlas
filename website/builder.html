@@ -1,0 +1,212 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Map art box builder · Java 26.3</title>
+<style>
+:root { color-scheme: light; --ink:#1c3731; --accent:#245e48; --edge:#c8d5c8; }
+* { box-sizing:border-box; }
+body { margin:0; background:#f4f3ec; color:var(--ink); font:1rem/1.5 "Segoe UI",system-ui,sans-serif; }
+main { max-width:52rem; margin:2rem auto; padding:0 1.25rem 2rem; }
+h1,h2,p { margin:0 0 .65rem; }
+h1 { font:600 clamp(2rem,6vw,3rem)/1.15 Georgia,serif; }
+h2 { font-size:1.2rem; }
+section { background:#fffefa; border:1px solid var(--edge); padding:1.3rem; border-radius:.7rem; margin:1rem 0; }
+label { display:block; font-weight:600; }
+input,button,textarea,select { font:inherit; color:inherit; }
+input,textarea,select { border:1px solid #8b9e91; border-radius:.3rem; padding:.45rem .6rem; background:white; }
+input[type=file] { width:100%; }
+input[type=number] { width:8rem; max-width:100%; }
+input[type=text] { width:14rem; max-width:100%; }
+.row { display:flex; flex-wrap:wrap; align-items:end; gap:.8rem; }
+.row label { margin-bottom:.15rem; }
+button { cursor:pointer; border:1px solid var(--accent); border-radius:.35rem; padding:.48rem .9rem; background:var(--accent); color:white; }
+button:disabled { opacity:.45; cursor:default; }
+details { margin-top:1rem; }
+summary { cursor:pointer; }
+details .row { margin-top:.7rem; }
+textarea { display:block; width:100%; min-height:8em; font:.88rem/1.5 Consolas,monospace; margin:.25rem 0 .8rem; }
+small { color:#3f584d; }
+#notice { min-height:1.4em; margin:.45rem 0 0; }
+#ids { max-height:9rem; overflow:auto; }
+#parts { margin:.7rem 0; }
+[hidden] { display:none!important; }
+</style>
+</head>
+<body><main>
+<h1>Map art box builder</h1>
+<p>Give an online player a shulker of map art. Pack maps loose or group them into bundles of 64. Up to 1,728 maps per command!</p>
+<section>
+<h2>Choose the migrated maps</h2>
+<label for="files">Select map .dat files</label>
+<input id="files" type="file" multiple accept=".dat">
+<small>Reads filenames only, on this device. Accepts 1234.dat and map_1234.dat, skips counter files, and keeps each ID once.</small>
+<details><summary>Enter a known consecutive ID range instead</summary>
+<form id="range" class="row">
+<div><label for="first">First ID</label><input id="first" type="number" min="0" max="2147483647" step="1" placeholder="1200" required></div>
+<div><label for="last">Last ID</label><input id="last" type="number" min="0" max="2147483647" step="1" placeholder="1253" required></div>
+<button type="submit">Use range</button>
+</form><small>Includes both ends and assumes every ID in between exists.</small>
+</details>
+<p id="sourceStatus" role="status"></p>
+</section>
+<section id="output" hidden>
+<h2>Give a box</h2>
+<div class="row">
+<div><label for="player">Online player</label><input id="player" type="text" value="ExampleName" autocomplete="off" spellcheck="false"></div>
+<div><label for="packing">Packing</label><select id="packing"><option value="bundles">Bundles · 1,728 maps per box</option><option value="loose">Loose maps · 27 per box</option></select></div>
+<div><label for="box">Box number</label><input id="box" type="number" min="1" value="1" step="1"></div>
+<span id="pages"></span>
+</div>
+<p id="summary"></p>
+<details><summary>Map IDs in packing order</summary><p id="ids"></p></details>
+<div id="parts" hidden><label for="part">What to give</label><select id="part"></select>
+<small id="help">If your console cuts off the full command, give the empty box and then each bundle. Place the box and move the bundles into it in order.</small></div>
+<label for="command">Server console command</label>
+<textarea id="command" readonly spellcheck="false"></textarea>
+<div class="row"><button id="copy" type="button">Copy command</button><button id="nextPart" type="button" hidden>Next bundle</button><button id="next" type="button">Next box</button></div>
+<p id="notice" role="status"></p>
+<small>Paste one command in your server console. Open the box before issuing more. The number on each map refers to the destination server’s saved artwork.</small>
+</section>
+<script>
+"use strict";
+const el = id => document.getElementById(id);
+const boxSize = 27;
+const bundleSize = 64;
+const maxId = 2147483647;
+let selectedIds = [];
+let rangeStart = 0;
+let count = 0;
+function startBatch(total, message) {
+  count = total;
+  el("box").value = "1";
+  el("part").value = "packed";
+  el("output").hidden = count === 0;
+  el("sourceStatus").textContent = message;
+  renderBox();
+}
+el("files").addEventListener("change", () => {
+  const unique = new Set();
+  const files = el("files").files;
+  let skipped = 0;
+  for (const file of files) {
+    const match = /^(?:map_)?(\d+)\.dat$/i.exec(file.name);
+    if (match && Number(match[1]) <= maxId) unique.add(Number(match[1]));
+    else skipped++;
+  }
+  selectedIds = [...unique].sort((a,b) => a-b);
+  startBatch(selectedIds.length, selectedIds.length + " distinct map IDs selected. Skipped " + skipped + " other files.");
+});
+el("range").addEventListener("submit", event => {
+  event.preventDefault();
+  const first = el("first").valueAsNumber;
+  const last = el("last").valueAsNumber;
+  if (last < first) {
+    el("last").setCustomValidity("The last ID must be at least the first ID.");
+    el("last").reportValidity();
+    el("last").setCustomValidity("");
+    return;
+  }
+  rangeStart = first;
+  selectedIds = [];
+  el("files").value = "";
+  startBatch(last - first + 1, "Using IDs " + first + " through " + last + ".");
+});
+function mapStack(id) {
+  return '{id:"minecraft:filled_map",count:1,components:{"minecraft:map_id":' + id + '}}';
+}
+function idRange(ids) {
+  return ids.length === 1 ? String(ids[0]) : ids[0] + " to " + ids[ids.length - 1];
+}
+function renderBox() {
+  const bundled = el("packing").value === "bundles";
+  const capacity = bundled ? boxSize * bundleSize : boxSize;
+  const pages = Math.ceil(count / capacity);
+  el("box").max = String(pages);
+  const page = el("box").valueAsNumber;
+  const player = el("player").value.trim();
+  const validPage = Number.isInteger(page) && page >= 1 && page <= pages;
+  const validPlayer = /^[a-zA-Z0-9_]{1,16}$/.test(player);
+  el("pages").textContent = "of " + pages;
+  el("command").value = "";
+  el("ids").textContent = "";
+  el("summary").textContent = "";
+  el("parts").hidden = !bundled || !validPage || !validPlayer;
+  el("nextPart").hidden = true;
+  el("notice").textContent = "";
+  el("copy").disabled = !validPage || !validPlayer;
+  el("next").disabled = !validPage || page === pages;
+  if (!count) return;
+  if (!validPage || !validPlayer) {
+    el("notice").textContent = !validPage ? "Choose a box number from 1 to " + pages + "." : "Enter a Java player name (1–16 letters, digits, or underscores).";
+    return;
+  }
+  const offset = (page - 1) * capacity;
+  const size = Math.min(capacity, count - offset);
+  const ids = selectedIds.length ? selectedIds.slice(offset, offset + size) : Array.from({length:size}, (_,i) => rangeStart + offset + i);
+  const label = "Map art " + page + " (" + idRange(ids) + ")";
+  const give = "minecraft:give " + player + " minecraft:";
+  const boxItem = 'shulker_box[custom_name={text:"' + label + '",italic:false}';
+  el("ids").textContent = ids.join(", ");
+  let stacks;
+  if (bundled) {
+    const bundles = [];
+    const previous = el("part").value;
+    const choices = [new Option("Packed shulker · one command", "packed"), new Option("Empty labeled shulker", "empty")];
+    for (let start = 0; start < ids.length; start += bundleSize) {
+      const group = ids.slice(start, start + bundleSize);
+      const number = bundles.length + 1;
+      const name = "Bundle " + number + " (" + idRange(group) + ")";
+      bundles.push({ name: '{text:"' + name + '",italic:false}', contents: "[" + group.map(mapStack).join(",") + "]" });
+      choices.push(new Option(name + " · " + group.length + " maps", String(number)));
+    }
+    el("part").replaceChildren(...choices);
+    el("part").value = choices.some(option => option.value === previous) ? previous : "packed";
+    el("summary").textContent = size + " maps in " + bundles.length + (bundles.length === 1 ? " bundle." : " bundles.");
+    const part = el("part").value;
+    if (part !== "packed") {
+      el("nextPart").hidden = Number(part) === bundles.length;
+      if (part === "empty") {
+        el("command").value = give + boxItem + "] 1";
+      } else {
+        const bundle = bundles[Number(part) - 1];
+        el("command").value = give + 'bundle[custom_name=' + bundle.name + ',bundle_contents=' + bundle.contents + '] 1';
+      }
+      return;
+    }
+    stacks = bundles.map(bundle => '{id:"minecraft:bundle",count:1,components:{"minecraft:custom_name":' + bundle.name + ',"minecraft:bundle_contents":' + bundle.contents + '}}');
+  } else {
+    el("summary").textContent = size + " loose maps.";
+    stacks = ids.map(mapStack);
+  }
+  const slots = stacks.map((stack, slot) => "{slot:" + slot + ",item:" + stack + "}");
+  el("command").value = give + boxItem + ',container=[' + slots.join(",") + ']] 1';
+}
+function changeBox() {
+  el("part").value = "packed";
+  renderBox();
+}
+el("packing").addEventListener("change", () => { el("box").value = "1"; changeBox(); });
+el("part").addEventListener("change", renderBox);
+el("nextPart").addEventListener("click", () => { el("part").selectedIndex++; renderBox(); });
+el("player").addEventListener("input", renderBox);
+el("box").addEventListener("input", changeBox);
+el("next").addEventListener("click", () => { el("box").stepUp(); changeBox(); });
+el("copy").addEventListener("click", async () => {
+  try {
+    await navigator.clipboard.writeText(el("command").value);
+    el("notice").textContent = "Copied. Paste this command in the server console.";
+  } catch {
+    el("command").focus();
+    el("command").select();
+    el("notice").textContent = "Command selected. Press Ctrl+C (Command+C on Mac) to copy.";
+  }
+});
+</script>
+<footer>
+  <a href="https://github.com/urzaslegacy/map-art-box-builder">
+    View source on GitHub
+  </a>
+</footer>
+</main></body></html>

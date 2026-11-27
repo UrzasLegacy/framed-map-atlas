@@ -1,0 +1,14 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Map Art Archive · Wubcraft</title><link rel="stylesheet" href="gallery.css"></head>
+<body><header><a class="brand" href="./"><span class="mark" aria-hidden="true">▦</span> WUBCRAFT</a><nav><a href="#collection">Collection</a><a href="builder.html">Classic builder ↗</a></nav></header>
+<main><section class="hero"><div><h1>Map Art<br><i>Archive</i></h1><p id="intro">Browse the Wubcraft collection and pack your favorite pieces into Minecraft shulkers.</p><a class="browse" href="#collection">Browse collection ↓</a></div><button class="featured" id="feature" hidden><img alt="" id="heroImage"><span id="caption"></span></button></section>
+<section id="collection"><div class="head"><h2>The collection</h2><button class="cart" id="openCart">Selection (<span id="count">0</span>) ↗</button></div>
+<div class="tools"><div class="tabs" aria-label="Artwork type"><button aria-pressed="true" data-kind="all">All works</button><button aria-pressed="false" data-kind="art">Multi-tile</button><button aria-pressed="false" data-kind="single">Single tiles</button></div><input type="search" id="search" aria-label="Search names or map IDs" placeholder="Search titles, names or map IDs"></div>
+<div class="meta"><span id="results" role="status">Loading collection…</span><label><input id="overlap" type="checkbox"> Hide singles used in artworks</label></div>
+<div class="grid" id="grid"></div><div class="pager"><button id="prev">← Previous</button><span id="page"></span><button id="next">Next →</button></div></section></main>
+<footer><a href="https://github.com/urzaslegacy/map-art-box-builder">Map art box builder ↗</a><span>Minecraft Java 26.3</span></footer>
+<dialog id="detail"><button class="close" data-close aria-label="Close artwork">×</button><div id="detailBody"></div></dialog>
+<dialog id="cart"><button class="close" data-close aria-label="Close selection">×</button><h2>Your selection</h2><p id="totals"></p><details><summary>Selected artworks</summary><div id="cartList"></div></details>
+<label class="player">Online player <input id="player" placeholder="PlayerName" maxlength="16" autocomplete="off" spellcheck="false"></label>
+<div class="actions"><button id="copy">Copy box command</button><button id="commands">Download commands</button><button id="portable">Download for my world</button></div><label id="boxLabel">Shulker <select id="box"></select></label><textarea readonly id="commandText" aria-label="Console command" rows="3"></textarea><p id="feedback" role="status"></p><p class="hint">Console commands use Wubcraft IDs. The world download includes the selected DATs and a local importer for Java 26.3.</p></dialog>
+<script src="collection/catalog.js"></script><script src="packing.js"></script><script src="download.js"></script><script src="gallery.js"></script></body></html>
+
