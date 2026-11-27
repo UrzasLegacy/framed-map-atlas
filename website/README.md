@@ -17,4 +17,4 @@ The generator discovers the finalized CSV and its matching `<manifest-stem>-asse
 
 Preview the site with `python -m http.server 8000 --bind 127.0.0.1 --directory website-dist` and open `http://localhost:8000/`. When ready, deploy the contents of `website-dist/` with `index.html` at the publishing root.
 
-Gallery destination IDs start at **100,000**. For the first build in this range, re-run finalization in a fresh output folder and omit any previous low-ID mapping. Downloaded map files use the gallery IDs directly. See `IMPORT.md` for installation and collision handling.
+Gallery IDs use **100,000 + original map ID**. Pixel-identical copies share the ID based on their lowest eligible original at first assignment. Re-finalize in a fresh folder without a sequential ledger for the first offset build. Downloaded map files use the gallery IDs directly. See `IMPORT.md` for installation and collision handling.
