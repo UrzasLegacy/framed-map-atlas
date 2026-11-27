@@ -129,13 +129,19 @@ def locked_dat(source):
     raise ValueError(f"{source}: missing map data compound")
 
 
+FIRST_GALLERY_ID = 100_000
+
+
 def allocate_ids(pixel_keys, previous, destination_data):
     assignments = {}
     reserved = set()
     if previous:
         for row in csv_rows(previous, ("pixel_key", "destination_map_id")):
             key, dest = row["pixel_key"], int(row["destination_map_id"])
-            if (not re.fullmatch("[0-9a-f]{64}", key) or not 1000 <= dest <= 2**31-1
+            if dest < FIRST_GALLERY_ID:
+                raise ValueError(f"Previous mapping contains ID {dest} below 100,000. "
+                                 "For the first high-ID export, omit --previous-mapping and choose a fresh output.")
+            if (not re.fullmatch("[0-9a-f]{64}", key) or dest > 2**31-1
                     or dest in reserved or key in assignments):
                 raise ValueError(f"Invalid or duplicate assignment in {previous}: {key}, {dest}")
             assignments[key] = dest
@@ -149,7 +155,7 @@ def allocate_ids(pixel_keys, previous, destination_data):
                 if len(paths) != 1 or pixel_signature(read_map_data(paths[0])["colors"])[0] != key:
                     raise ValueError(f"Previous destination ID {dest} conflicts with the destination world")
         reserved.update(occupied)
-    dest = 1000
+    dest = FIRST_GALLERY_ID
     for key in sorted(pixel_keys - assignments.keys()):
         while dest in reserved:
             dest += 1
