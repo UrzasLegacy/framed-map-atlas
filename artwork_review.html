@@ -26,6 +26,10 @@ dialog{width:min(40rem,92vw);max-height:84vh;border:1px solid var(--line);border
 dialog::backdrop{background:#0008}#tile-list{max-height:46vh;overflow:auto;margin:.8rem 0;padding:.2rem}
 .tile-option{border-bottom:1px solid var(--line);padding:.4rem 0}.tile-option label{display:flex;align-items:baseline;gap:.45rem}
 .tile-option img{width:5rem;image-rendering:pixelated}.restored{position:absolute;object-fit:fill;background:Canvas;image-rendering:pixelated}
+#merge-editor{width:min(54rem,94vw)}#merge-grid{position:relative;background:#5b6571;outline:1px solid var(--line);margin:1rem auto;max-width:100%}
+#merge-grid span{position:absolute;box-shadow:inset 0 0 0 1px #8884;image-rendering:pixelated}
+.part{display:flex;align-items:center;flex-wrap:wrap;gap:.5rem;margin:.4rem 0}.part input{width:5rem}
+#merge-title,#merge-search,#merge-match{width:100%}#merge-grid.placing{cursor:crosshair}
 </style></head><body>
 <header><h1>Map artwork review</h1><p id="overview"></p></header>
 <fieldset><legend>Find layouts</legend><div class="filters">
@@ -39,8 +43,17 @@ dialog::backdrop{background:#0008}#tile-list{max-height:46vh;overflow:auto;margi
 <label>Review status<select id="status"><option selected>Unreviewed</option><option>All decisions</option><option>Keep artwork</option><option>Needs investigation</option><option>Ignore grouping</option><option>Remove tiles</option></select></label>
 <button type="button" id="clear">Clear filters</button></div></fieldset>
 <div class="actions"><button id="export">Export artwork decisions</button><button id="import">Import artwork decisions</button><input id="file" type="file" accept=".json,application/json" hidden><span id="progress"></span></div>
+<details id="merge-shelf"><summary id="merge-count">Saved merged artworks</summary><div id="merge-list" class="actions"></div></details>
 <p class="note">Gold crosses are excluded tiles. Gray cells are gaps. Artist credits are inferred from names recorded on the maps.</p>
 <p id="notice" role="status"></p><nav id="top" aria-label="Result pages"></nav><main id="grid"></main><nav id="bottom" aria-label="Result pages"></nav>
+<dialog id="merge-editor" aria-labelledby="merge-heading"><h2 id="merge-heading">Merge artwork groups</h2>
+<label>Artwork name<input id="merge-title"></label>
+<label>Find another group by name, group ID or tile ID<input type="search" id="merge-search"></label>
+<label>Matching groups<select id="merge-match"></select></label><button id="merge-add">Add group</button>
+<p>The first group starts at row 1, column 1. Set each other group's top-left cell. Zero and negative values place it above or left.</p>
+<div id="merge-parts"></div><label><span><input type="checkbox" id="merge-replace"> Allow an originally kept tile to cover an originally excluded tile</span></label>
+<div id="merge-grid" role="img" aria-label="Combined artwork preview"></div><p id="merge-result" role="status"></p>
+<div class="actions"><button id="merge-save">Save merged artwork</button><button id="merge-cancel">Cancel</button><button id="merge-delete">Undo saved merge</button></div></dialog>
 <dialog id="tile-review" aria-labelledby="tile-heading"><h2 id="tile-heading"></h2>
 <p id="tile-help"></p>
 <div id="tile-list"></div><div class="actions"><button id="tile-apply"></button><button id="tile-cancel">Cancel</button></div></dialog>
@@ -53,7 +66,8 @@ const choices=["Keep artwork","Needs investigation","Ignore grouping"];
 const removeStatus="Remove tiles";
 const ids=new Set(cards.map(a=>a.key));
 const legacyStore="framed-map-atlas/artwork-decisions/"+collection;
-const store=legacyStore+"/v3";
+const store=legacyStore+"/v4";
+const byKey=new Map(cards.map(a=>[a.key,a]));
 const keptByLayout=new Map(),owners=new Map(),excludedIds=new Set();
 for(const a of cards){
   const kept=new Map();
@@ -67,7 +81,7 @@ for(const a of cards){
 const fmt=n=>n.toLocaleString("en-US");
 const fold=s=>s.normalize("NFKC").toLowerCase().trim();
 const pageSize=48;
-let decisions=new Map(),removals=new Map(),additions=new Map(),page=0;
+let decisions=new Map(),removals=new Map(),additions=new Map(),merges=new Map(),page=0;
 function el(tag,text){const n=document.createElement(tag);if(text!==undefined)n.textContent=text;return n}
 function button(text,action){const b=el("button",text);b.type="button";b.onclick=action;return b}
 function option(select,text,value=text){const o=el("option",text);o.value=value;select.append(o)}
@@ -96,7 +110,7 @@ function recoveryEntries(rows){
 }
 function exportedRecovery(){return [...additions].sort(([a],[b])=>a-b).map(([map_id,pixel_key])=>({map_id,pixel_key}))}
 function loadSaved(){
-  const stored=JSON.parse(localStorage.getItem(store)??localStorage.getItem(legacyStore+"/v2")??localStorage.getItem(legacyStore)??"[]");
+  const stored=JSON.parse(localStorage.getItem(store)??localStorage.getItem(legacyStore+"/v3")??localStorage.getItem(legacyStore+"/v2")??localStorage.getItem(legacyStore)??"[]");
   const rows=Array.isArray(stored)?stored:stored.decisions;
   const states=new Map(),selected=new Map();
   for(const [key,value,tiles] of rows){
@@ -104,12 +118,13 @@ function loadSaved(){
     const selection=validateSelection(key,value,tiles);
     states.set(key,value);if(selection.length)selected.set(key,selection)
   }
-  additions=recoveryEntries(Array.isArray(stored)?[]:stored.recover_tiles);removals=selected;return states
+  const combined=readMerges(stored.merged_artworks??[]);
+  additions=recoveryEntries(Array.isArray(stored)?[]:stored.recover_tiles);removals=selected;merges=combined;return states
 }
 try{decisions=loadSaved()}catch{notice("Browser storage is unavailable or unreadable. Import your artwork decisions to restore them.")}
 function save(){try{
   const rows=[...decisions].map(([k,v])=>removals.has(k)?[k,v,removals.get(k)]:[k,v]);
-  localStorage.setItem(store,JSON.stringify({decisions:rows,recover_tiles:exportedRecovery()}))
+  localStorage.setItem(store,JSON.stringify({decisions:rows,recover_tiles:exportedRecovery(),merged_artworks:[...merges.values()]}))
 }catch{notice("Browser storage is unavailable. Export your decisions before closing.")}}
 window.addEventListener("storage",e=>{if(e.key===store||e.key===null){try{decisions=loadSaved();render()}catch{notice("Could not reload browser decisions.")}}});
 for(const a of cards){
@@ -207,6 +222,145 @@ function editRecovery(a){
   };
   $("tile-review").showModal()
 }
+function compose(parts,replaceExcluded){
+  const cells=new Map(),used=new Set(),overlaps=new Set();
+  let top=1,left=1,bottom=1,right=1,replaced=0;
+  for(const {layout_key,row,column} of parts){
+    const art=byKey.get(layout_key);
+    if(!art||used.has(layout_key))throw Error("Choose distinct groups from this gallery.");
+    used.add(layout_key);
+    if(!Number.isSafeInteger(row)||!Number.isSafeInteger(column))throw Error("Enter a whole row and column for each group.");
+    top=Math.min(top,row);left=Math.min(left,column);
+    bottom=Math.max(bottom,row+art.height-1);right=Math.max(right,column+art.width-1);
+    for(const tile of art.tiles){
+      const r=row+tile[0]-1,c=column+tile[1]-1,key=r+","+c;
+      const old=cells.get(key);
+      const cell={r,c,art,tile,covered:false};
+      if(!old){cells.set(key,cell);continue}
+      if(replaceExcluded&&!old.covered&&old.tile[4]!==tile[4]){
+        const winner=tile[4]?cell:old;winner.covered=true;cells.set(key,winner);replaced++
+      }else overlaps.add(key)
+    }
+  }
+  const width=right-left+1,height=bottom-top+1;
+  if(!Number.isSafeInteger(width*height))throw Error("The group positions exceed the supported grid size.");
+  return {cells,top,left,right,bottom,width,height,gaps:width*height-cells.size,overlaps,replaced}
+}
+function readMerges(rows){
+  if(!Array.isArray(rows))throw Error("Invalid merged artwork list.");
+  const saved=new Map();
+  for(const record of rows){
+    if(!record||typeof record.title!=="string"||!record.title.trim()||typeof record.replace_excluded!=="boolean"||
+       !Array.isArray(record.parts)||record.parts.length<2)throw Error("Invalid merged artwork.");
+    const parts=record.parts.map(({layout_key,row,column})=>({layout_key,row,column}));
+    const anchor=parts[0];
+    if(anchor.row!==1||anchor.column!==1||saved.has(anchor.layout_key)||compose(parts,record.replace_excluded).overlaps.size)
+      throw Error("Conflicting or invalid merged artwork positions.");
+    saved.set(anchor.layout_key,{title:record.title.trim(),parts,replace_excluded:record.replace_excluded})
+  }
+  return saved
+}
+function exportMerges(){
+  const removed=new Set([...removals.values()].flat());
+  return [...merges.values()].map(spec=>{
+    const grid=compose(spec.parts,spec.replace_excluded);
+    const tiles=[...grid.cells.values()].sort((a,b)=>a.r-b.r||a.c-b.c).map(({r,c,art,tile})=>({
+      row:r-grid.top+1,column:c-grid.left+1,original_map_id:tile[2],chosen_name:tile[3],
+      clockwise_quarters:tile[7],source_group:art.id,source_row:tile[0],source_column:tile[1],
+      in_migration:tile[4]?!removed.has(tile[2]):additions.has(tile[2])
+    }));
+    return {...spec,width:grid.width,height:grid.height,gaps:grid.gaps,tiles}
+  })
+}
+function editMerge(anchor){
+  const original=merges.get(anchor.key);
+  const parts=original?original.parts.map(p=>({...p})):[{layout_key:anchor.key,row:1,column:1}];
+  const dialog=$("merge-editor"),picture=$("merge-grid"),result=$("merge-result"),saveButton=$("merge-save");
+  const title=$("merge-title"),search=$("merge-search"),match=$("merge-match"),replace=$("merge-replace");
+  let placing=null,lastGrid=null;
+  title.value=original?.title||anchor.title||anchor.id;search.value="";replace.checked=original?.replace_excluded??false;
+  function matches(){
+    match.replaceChildren();const term=fold(search.value),tileId=idQuery(term);
+    const included=new Set(parts.map(p=>p.layout_key));
+    const found=cards.filter(a=>!included.has(a.key)&&(!term||(tileId===null?a.names.some(n=>n.includes(term)):a.tiles.some(t=>t[2]===tileId))));
+    for(const a of found.slice(0,100))option(match,a.id+" · "+(a.title||"Untitled")+" · "+a.width+" × "+a.height,a.key);
+    if(!found.length)option(match,"No matching groups","");
+    if(found.length>100){const hint=el("option","Type to narrow "+fmt(found.length)+" matches");hint.disabled=true;match.append(hint)}
+    match.value=found[0]?.key||"";$("merge-add").disabled=!found.length
+  }
+  function draw(){
+    lastGrid=null;picture.replaceChildren();picture.className=placing?"placing":"";
+    saveButton.disabled=true;
+    try{
+      const grid=compose(parts,replace.checked);lastGrid=grid;
+      picture.style.width="min(100%, "+Math.max(1,Math.min(grid.width*80,360*grid.width/grid.height))+"px)";
+      picture.style.aspectRatio=grid.width+" / "+grid.height;
+      for(const [pos,{r,c,art,tile}] of grid.cells){
+        const square=el("span"),[sr,sc,id,,kept,,,turns]=tile;
+        square.title="R"+r+" C"+c+" · #"+id+" · "+art.id;
+        Object.assign(square.style,{top:100*(r-grid.top)/grid.height+"%",left:100*(c-grid.left)/grid.width+"%",
+          width:100/grid.width+"%",height:100/grid.height+"%"});
+        if(!kept&&additions.has(id)&&recovery[id]){
+          square.style.backgroundImage="url(data:image/png;base64,"+recovery[id][1]+")";
+          square.style.backgroundSize="100% 100%";square.style.transform="rotate("+turns*90+"deg)"
+        }else{
+          square.style.backgroundImage='url("'+art.preview+'")';
+          square.style.backgroundSize=art.width*100+"% "+art.height*100+"%";
+          square.style.backgroundPosition=(art.width===1?0:(sc-1)*100/(art.width-1))+"% "+(art.height===1?0:(sr-1)*100/(art.height-1))+"%"
+        }
+        if(grid.overlaps.has(pos))square.style.boxShadow="inset 0 0 0 4px crimson";
+        picture.append(square)
+      }
+      const conflict=[...grid.overlaps][0];
+      const status=grid.width+" × "+grid.height+" · "+grid.cells.size+" placed · "+grid.gaps+" gaps";
+      result.textContent=status+(conflict?" · Overlap at row, column "+conflict+". Move a group before saving.":
+        grid.replaced?" · "+grid.replaced+" excluded placements covered.":"")+
+        (placing?" Click the cell where this group's top-left corner belongs.":"");
+      saveButton.disabled=parts.length<2||Boolean(conflict)||!title.value.trim()
+    }catch(error){result.textContent=error.message}
+  }
+  function controls(){
+    const panel=$("merge-parts");panel.replaceChildren();
+    for(const [i,p] of parts.entries()){
+      const art=byKey.get(p.layout_key),line=el("div");line.className="part";
+      line.append(el("strong",art.id+" · "+(art.title||"Untitled")+" ("+art.width+" × "+art.height+")"));
+      for(const k of ["row","column"]){
+        const label=el("label",k==="row"?"Top row":"Left column"),input=el("input");
+        input.type="number";input.step="1";input.value=String(p[k]);input.disabled=i===0;
+        input.oninput=()=>{p[k]=input.value===""?NaN:Number(input.value);placing=null;draw()};
+        label.append(input);line.append(label)
+      }
+      if(i){
+        line.append(button("Place on preview",()=>{placing=p;draw()}),button("Detach",()=>{
+          parts.splice(i,1);placing=null;controls();matches();draw()
+        }))
+      }
+      panel.append(line)
+    }
+  }
+  picture.onclick=e=>{
+    if(!placing||!lastGrid)return;
+    const box=picture.getBoundingClientRect();
+    placing.row=lastGrid.top+Math.min(lastGrid.height-1,Math.max(0,Math.floor((e.clientY-box.top)*lastGrid.height/box.height)));
+    placing.column=lastGrid.left+Math.min(lastGrid.width-1,Math.max(0,Math.floor((e.clientX-box.left)*lastGrid.width/box.width)));
+    placing=null;controls();draw()
+  };
+  $("merge-add").onclick=()=>{
+    if(!match.value||!lastGrid)return;
+    parts.push({layout_key:match.value,row:1,column:lastGrid.right+1});
+    placing=null;controls();matches();draw()
+  };
+  saveButton.onclick=()=>{
+    if(saveButton.disabled)return;
+    const spec={title:title.value.trim(),parts,replace_excluded:replace.checked};
+    readMerges([spec]);merges.set(anchor.key,spec);dialog.close();notice("Saved merged artwork · "+spec.title);save();render()
+  };
+  const undo=$("merge-delete");undo.hidden=!original;undo.onclick=()=>{
+    merges.delete(anchor.key);dialog.close();notice("Undid merge · "+original.title);save();render()
+  };
+  search.oninput=matches;replace.onchange=draw;title.oninput=draw;$("merge-cancel").onclick=()=>dialog.close();
+  controls();matches();draw();dialog.showModal()
+}
 function makeCard(a,tileId,markedCounts){
   const card=el("article"),title=a.title||a.id,photo=el("a"),map=el("span"),img=el("img");
   photo.className="photo";photo.href=a.preview;photo.title="Open composite PNG";
@@ -272,6 +426,11 @@ function makeCard(a,tileId,markedCounts){
     const recover=button("Recover excluded tiles"+(recovered?" ("+recovered+"/"+a.excluded+" placements)":""),
       ()=>editRecovery(a));recover.className="removal";buttons.append(recover)
   }
+  const mergeButton=button(merges.has(a.key)?"Edit merged artwork":"Merge with another group",()=>editMerge(a));
+  mergeButton.className="removal";buttons.append(mergeButton);
+  for(const [key,spec] of merges)if(key!==a.key&&spec.parts.some(p=>p.layout_key===a.key)){
+    buttons.append(button("Open merge · "+spec.title,()=>editMerge(byKey.get(key))))
+  }
   decision.append(el("legend","Layout decision"),buttons);card.append(canvases,info,decision);return card
 }
 function nav(id,count,pages){
@@ -284,6 +443,8 @@ function nav(id,count,pages){
   bar.append(prev,el("span","Page "+(page+1)+" of "+pages),next)
 }
 function render(){
+  $("merge-count").textContent="Saved merged artworks ("+merges.size+")";
+  $("merge-list").replaceChildren(...[...merges].map(([key,spec])=>button(spec.title+" · "+byKey.get(key).id,()=>editMerge(byKey.get(key)))));
   const q=fold($("query").value),tileId=idQuery(q),artist=fold($("artist").value),canvas=$("canvas").value;
   const width=$("width").value,height=$("height").value,status=$("status").value;
   const rows=cards.filter(a=>
@@ -306,16 +467,17 @@ $("export").onclick=()=>{
     if(removals.has(a.key))row.remove_ids=removals.get(a.key);
     return row
   });
-  const data={format:"framed-map-atlas/artwork-review-v3",collection,decisions:entries,recover_tiles:exportedRecovery()};
+  const data={format:"framed-map-atlas/artwork-review-v4",collection,decisions:entries,recover_tiles:exportedRecovery(),merged_artworks:exportMerges()};
   const url=URL.createObjectURL(new Blob([JSON.stringify(data,null,2)],{type:"application/json"}));
   const link=el("a");link.href=url;link.download="artwork-decisions.json";document.body.append(link);link.click();link.remove();
   setTimeout(()=>URL.revokeObjectURL(url),1000)
 };
 $("import").onclick=()=>$("file").click();
 function importDecisions(data){
-  if(!["framed-map-atlas/artwork-review-v1","framed-map-atlas/artwork-review-v2","framed-map-atlas/artwork-review-v3"].includes(data?.format)||!Array.isArray(data.decisions))throw Error("Choose an exported artwork-decisions.json file.");
+  if(!["framed-map-atlas/artwork-review-v1","framed-map-atlas/artwork-review-v2","framed-map-atlas/artwork-review-v3","framed-map-atlas/artwork-review-v4"].includes(data?.format)||!Array.isArray(data.decisions))throw Error("Choose an exported artwork-decisions.json file.");
   if(data.collection!==collection)throw Error("This file belongs to a different gallery collection.");
-  const recovered=recoveryEntries(data.format.endsWith("-v3")?data.recover_tiles:[]);
+  const recovered=recoveryEntries(/-v[34]$/.test(data.format)?data.recover_tiles:[]);
+  const incomingMerges=readMerges(data.format.endsWith("-v4")?data.merged_artworks:[]);
   for(const [id,key] of recovered)if(key&&additions.get(id)&&additions.get(id)!==key)throw Error("Conflicting recovery pixel keys for #"+id);
   const incoming=new Map();
   for(const row of data.decisions){
@@ -329,7 +491,11 @@ function importDecisions(data){
     else if(decisions.get(key)!==value||JSON.stringify(removals.get(key)||[])!==JSON.stringify(selected))conflicts++
   }
   for(const [id,key] of recovered)additions.set(id,additions.get(id)??key);
-  notice(added+" decisions imported. "+recovered.size+" recovery IDs merged. "+conflicts+" conflicting local decisions preserved.");save();render()
+  for(const [key,spec] of incomingMerges){
+    if(!merges.has(key))merges.set(key,spec);
+    else if(JSON.stringify(merges.get(key))!==JSON.stringify(spec))conflicts++
+  }
+  notice(added+" decisions imported. "+recovered.size+" recovery IDs merged. "+conflicts+" conflicting local decisions or merges preserved.");save();render()
 }
 $("file").onchange=async e=>{
   const file=e.target.files[0];if(!file)return;
