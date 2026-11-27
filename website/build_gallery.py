@@ -9,9 +9,6 @@ import tempfile
 from collections import defaultdict
 from pathlib import Path
 
-from PIL import Image
-
-
 SITE_FILES = ("index.html", "gallery.css", "gallery.js", "packing.js", "download.js",
               "builder.html", "import-world.cjs", "IMPORT.md")
 
@@ -51,6 +48,8 @@ def tile_title(title, tiles, group):
 
 
 def generate(manifest, layouts, folder):
+    from PIL import Image
+
     originals, assets, aliases = {}, {}, defaultdict(list)
     with manifest.open(encoding="utf-8-sig", newline="") as f:
         reader = csv.DictReader(f, strict=True)
