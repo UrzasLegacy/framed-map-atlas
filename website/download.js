@@ -43,30 +43,40 @@ const Downloads = (() => {
     const url=URL.createObjectURL(blob), a=document.createElement("a");
     a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),60000);
   }
-  async function portable(selections, catalog, progress) {
+  async function appendDats(files, ids, catalog, prefix, progress) {
     if(location.protocol==="file:") throw Error("For world downloads, open the hosted gallery or serve this folder with python -m http.server.");
-    const ids=new Set(selections.flatMap(s=>s.tiles.map(t=>t.id)));
-    const blocks=new Map(), hashes={};
+    const blocks=new Map();
     for(const id of ids) {
-      const [block,start,length,sha]=catalog.maps[id];
+      const [block,start,length]=catalog.maps[id];
       if(!blocks.has(block)) blocks.set(block,[]);
-      blocks.get(block).push({id,start,length}); hashes[id]=sha;
+      blocks.get(block).push({id,start,length});
     }
-    const files=[];
-    for(const name of ["import-world.cjs","packing.js","IMPORT.md"]) files.push([name,await bytes(name)]);
-    files.push(["selection.json",encoder.encode(JSON.stringify({format:"wubcraft-map-selection-v1",files:hashes,selections},null,2))]);
     let done=0;
     for(const [block,rows] of blocks) {
       const raw=await bytes("collection/maps/"+block+".bin");
       for(const {id,start,length} of rows) {
         if(start+length>raw.length) throw Error("Truncated map download for "+id);
-        files.push(["dats/"+id+".dat",raw.subarray(start,start+length)]);
+        files.push([prefix+id+".dat",raw.subarray(start,start+length)]);
       }
       done+=rows.length; progress(done,ids.size);
     }
+  }
+  async function allDats(catalog, progress) {
+    const ids = new Set(Object.keys(catalog.maps));
+    const files = [];
+    await appendDats(files, ids, catalog, "", progress);
     return zip(files);
   }
-  return {save, portable, zip};
+  async function portable(selections, catalog, progress) {
+    const ids = new Set(selections.flatMap(s => s.tiles.map(t => t.id)));
+    const hashes = Object.fromEntries([...ids].map(id => [id, catalog.maps[id][3]]));
+    const files = [];
+    await appendDats(files, ids, catalog, "dats/", progress);
+    for (const name of ["import-world.cjs","packing.js","IMPORT.md"]) files.push([name,await bytes(name)]);
+    files.push(["selection.json",encoder.encode(JSON.stringify({format:"wubcraft-map-selection-v1",files:hashes,selections},null,2))]);
+    return zip(files);
+  }
+  return {save, portable, allDats, zip};
 })();
 if(typeof module!=="undefined") module.exports=Downloads;
 

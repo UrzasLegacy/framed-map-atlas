@@ -21,6 +21,10 @@ Send `collection.zip` to the server admin separately. It contains the compiled g
 
 ## Server admin
 
+**Download all map DATs** on the gallery assembles `all-map-dats.zip` in the visitor's browser using the existing `collection/maps/*.bin` files. Each destination ID appears once as a numbered DAT at the ZIP root. It works with previously built collections and requires no card selections.
+
+To preload maps on Java 26.3, extract the download into a staging folder. Back up the world and stop the server before copying the numbered files into its `data/minecraft/maps/` folder. Skip byte-identical files and resolve any filename collisions with different contents before copying. Leave `last_id.dat` in place.
+
 1. Extract **both ZIPs into the same directory**. You should see `index.html` and `collection/catalog.js` underneath that directory. Each ZIP already has the correct internal paths.
 2. To preview, run `python -m http.server 8000 --bind 127.0.0.1` there and open `http://localhost:8000/`.
 3. Serve that directory as the static site. For a site-only update, replace the site files and keep the collection. For a collection-only update, replace the entire `collection/` directory with the new one to retire removed assets. If your host deploys a complete directory snapshot, submit the assembled directory with both parts present.

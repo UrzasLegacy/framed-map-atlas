@@ -32,6 +32,25 @@
   try {for(const k of JSON.parse(localStorage.getItem(storageKey)||"[]")) if(byKey.has(k)) selected.add(k);} catch {}
   let mode="all", page=0, filtered=[], result=null, downloading=false;
   const pageSize=48, number=n=>n.toLocaleString();
+  const allDats = $("allDats"), datStatus = $("datStatus");
+  const datCount = Object.keys(catalog.maps).length;
+  allDats.textContent = `Download all map DATs (${number(datCount)})`;
+  allDats.disabled = !datCount;
+  allDats.onclick = async () => {
+    allDats.disabled = true;
+    datStatus.textContent = "Loading map data…";
+    try {
+      const archive = await Downloads.allDats(catalog, (done, total) => {
+        datStatus.textContent = `Preparing ${number(done)} of ${number(total)} DATs…`;
+      });
+      Downloads.save(archive, "all-map-dats.zip");
+      datStatus.textContent = "All map DATs are ready to save.";
+    } catch (error) {
+      datStatus.textContent = error.message;
+    } finally {
+      allDats.disabled = false;
+    }
+  };
   const node=(tag,text,cls)=>{const n=document.createElement(tag);if(text!=null)n.textContent=text;if(cls)n.className=cls;return n;};
   const thumb=(file)=>{const img=node("img");img.alt="";img.loading="lazy";img.src="collection/images/"+file;return img;};
   function oldIdCaption(id, compact=false) {
